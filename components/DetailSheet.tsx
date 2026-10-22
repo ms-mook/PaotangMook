@@ -3,7 +3,14 @@ import { useState } from "react";
 import { baht, dayLabel } from "@/lib/format";
 import type { Tx } from "@/lib/types";
 
-export default function DetailSheet({ tx, onClose, onDeleted }: { tx: Tx; onClose: () => void; onDeleted: (id: string) => void }) {
+interface Props {
+  tx: Tx;
+  onClose: () => void;
+  onEdit: (tx: Tx) => void;
+  onDeleted: (id: string) => void;
+}
+
+export default function DetailSheet({ tx, onClose, onEdit, onDeleted }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -23,7 +30,7 @@ export default function DetailSheet({ tx, onClose, onDeleted }: { tx: Tx; onClos
       <div className="scrim" onClick={onClose} />
       <div className="sheet" role="dialog">
         <div className="grab" />
-        <div className={`amt ${tx.type}`} style={{ fontSize: 30 }}>
+        <div className={`amt num ${tx.type}`} style={{ fontSize: 30 }}>
           {tx.type === "income" ? "+" : "−"}
           {baht(tx.amount)} บาท
         </div>
@@ -32,19 +39,23 @@ export default function DetailSheet({ tx, onClose, onDeleted }: { tx: Tx; onClos
           <dd>{tx.type === "income" ? "รายรับ" : "รายจ่าย"}</dd>
           <dt>หมวด</dt>
           <dd>{tx.category || "-"}</dd>
+          {tx.account && (<><dt>บัญชี</dt><dd>{tx.account}</dd></>)}
           <dt>วันที่</dt>
           <dd>{dayLabel(tx.date)}</dd>
           {tx.note && (<><dt>หมายเหตุ</dt><dd>{tx.note}</dd></>)}
-          {tx.bank && (<><dt>ธนาคาร</dt><dd>{tx.bank}</dd></>)}
+          {tx.bank && (<><dt>ธนาคารผู้โอน</dt><dd>{tx.bank}</dd></>)}
           {tx.transRef && (<><dt>เลขอ้างอิง</dt><dd className="num">{tx.transRef}</dd></>)}
         </dl>
         {tx.slipFileId && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="detail-img" src={`/api/slip/${tx.slipFileId}`} alt="สลิป" loading="lazy" />
+          <a href={`/api/slip/${tx.slipFileId}`} target="_blank" rel="noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="detail-img" src={`/api/slip/${tx.slipFileId}`} alt="สลิป" loading="lazy" />
+          </a>
         )}
-        <button className="btn danger" disabled={busy} onClick={remove}>
-          {busy ? "กำลังลบ…" : "ลบรายการ"}
-        </button>
+        <div className="btn-row">
+          <button className="btn ghost" disabled={busy} onClick={() => onEdit(tx)}>✏️ แก้ไข</button>
+          <button className="btn danger" disabled={busy} onClick={remove}>{busy ? "กำลังลบ…" : "ลบ"}</button>
+        </div>
         {err && <div className="err">{err}</div>}
       </div>
     </>

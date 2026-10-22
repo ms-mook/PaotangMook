@@ -1,5 +1,5 @@
 // เป๋าตังค์ service worker: app-shell cache + Android share target for slips.
-const SHELL = "pt-shell-v1";
+const SHELL = "pt-shell-v2";
 const SHARE = "pt-share";
 
 self.addEventListener("install", (e) => {
@@ -23,10 +23,11 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       (async () => {
         const form = await e.request.formData();
-        const file = form.get("slip");
-        if (file) {
-          const cache = await caches.open(SHARE);
-          await cache.put("/shared-slip", new Response(file, { headers: { "Content-Type": file.type || "image/jpeg" } }));
+        const files = form.getAll("slip");
+        const cache = await caches.open(SHARE);
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          await cache.put(`/shared-slip-${Date.now()}-${i}`, new Response(f, { headers: { "Content-Type": f.type || "image/jpeg" } }));
         }
         return Response.redirect("/?shared=1", 303);
       })(),

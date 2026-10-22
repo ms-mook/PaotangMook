@@ -1,11 +1,13 @@
 // Server-only client for the Apps Script web app that owns the Google Sheet + slip folder.
-import type { Tx } from "./types";
+import { DEFAULT_SETTINGS, type Settings, type Tx } from "./types";
 
 export class StoreError extends Error {
   constructor(message: string, public status = 500) {
     super(message);
   }
 }
+
+type Slip = { name: string; mime: string; bytes: ArrayBuffer } | undefined;
 
 async function call<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const url = process.env.APPS_SCRIPT_URL;
@@ -32,22 +34,31 @@ async function call<T>(action: string, payload: Record<string, unknown> = {}): P
     );
   }
   if (data.error === "unauthorized") throw new StoreError("APPS_SCRIPT_SECRET ไม่ตรงกับ SECRET ในสคริปต์", 500);
+  if (data.error === "unknown action")
+    throw new StoreError("Apps Script ยังเป็นเวอร์ชันเก่า — วางโค้ด apps-script/Code.gs ใหม่แล้ว Deploy เป็น New version");
   if (data.error) throw new StoreError(data.error, data.duplicate ? 409 : 400);
   return data as T;
 }
 
-export const ping = () => call<{ ok: boolean; sheet: string; folder: string }>("ping");
+const encSlip = (slip: Slip) =>
+  slip ? { name: slip.name, mime: slip.mime, data: Buffer.from(slip.bytes).toString("base64") } : null;
 
-export async function listTx(): Promise<Tx[]> {
-  return (await call<{ items: Tx[] }>("list")).items;
+const normTx = (t: Tx): Tx => ({ ...t, account: t.account || "" });
+const normSettings = (s: Partial<Settings> | undefined): Settings => ({ ...DEFAULT_SETTINGS, ...(s || {}) });
+
+export const ping = () => call<{ ok: boolean; version?: number; sheet: string; folder: string }>("ping");
+
+export async function bootstrap(): Promise<{ items: Tx[]; settings: Settings }> {
+  const r = await call<{ items: Tx[]; settings: Settings }>("bootstrap");
+  return { items: r.items.map(normTx), settings: normSettings(r.settings) };
 }
 
-export async function addTx(tx: Tx, slip?: { name: string; mime: string; bytes: ArrayBuffer }): Promise<Tx> {
-  const res = await call<{ item: Tx }>("add", {
-    tx,
-    slip: slip ? { name: slip.name, mime: slip.mime, data: Buffer.from(slip.bytes).toString("base64") } : null,
-  });
-  return res.item;
+export async function addTx(tx: Tx, slip?: Slip): Promise<Tx> {
+  return (await call<{ item: Tx }>("add", { tx, slip: encSlip(slip) })).item;
+}
+
+export async function updateTx(id: string, patch: Partial<Tx>, slip?: Slip): Promise<Tx> {
+  return (await call<{ item: Tx }>("update", { id, patch, slip: encSlip(slip) })).item;
 }
 
 export async function deleteTx(id: string) {
@@ -58,3 +69,9 @@ export async function getSlip(id: string): Promise<{ mime: string; bytes: Buffer
   const res = await call<{ mime: string; data: string }>("slip", { id });
   return { mime: res.mime, bytes: Buffer.from(res.data, "base64") };
 }
+
+export async function saveSettings(settings: Settings): Promise<Settings> {
+  return normSettings((await call<{ settings: Settings }>("saveSettings", { settings })).settings);
+}
+
+export const testEmail = () => call<{ ok: boolean; to: string }>("testEmail");

@@ -1,5 +1,5 @@
 /**
- * เป๋าตังค์ — Apps Script backend
+ * เป๋าตังค์ — Apps Script backend (v2)
  *
  * วิธีติดตั้ง:
  * 1. สร้าง Google Sheet ใหม่ → เมนู ส่วนขยาย (Extensions) → Apps Script
@@ -11,15 +11,36 @@
  * 5. กดอนุญาตสิทธิ์ (ถ้าขึ้น "unverified" ให้กด Advanced → Go to ... (unsafe) → Allow)
  * 6. คัดลอก URL ของเว็บแอป (ลงท้ายด้วย /exec) ไปใส่ APPS_SCRIPT_URL ใน Vercel
  *
- * ถ้าแก้โค้ดนี้ภายหลัง: Deploy → Manage deployments → แก้ไข (✏️) → Version: New version → Deploy
- * (URL เดิมยังใช้ได้)
+ * อัปเดตจากเวอร์ชันเก่า: วางโค้ดใหม่ทับ (คงค่า SECRET เดิมไว้) → กดบันทึก
+ *   → เลือกฟังก์ชัน authorize ด้านบนแล้วกด Run หนึ่งครั้งเพื่ออนุญาตสิทธิ์ใหม่ (อีเมล/ตั้งเวลา)
+ *   → Deploy → Manage deployments → ✏️ → Version: New version → Deploy (URL เดิมใช้ต่อได้)
  */
 
 const SECRET = 'CHANGE-ME-to-a-long-random-string';
 
 const TAB = 'รายการ';
 const FOLDER_NAME = 'เป๋าตังค์ - สลิป';
-const HEADERS = ['id', 'createdAt', 'date', 'type', 'amount', 'category', 'note', 'bank', 'transRef', 'slipFileId'];
+const HEADERS = ['id', 'createdAt', 'date', 'type', 'amount', 'category', 'note', 'bank', 'transRef', 'slipFileId', 'account'];
+const NCOL = HEADERS.length;
+const TZ = 'Asia/Bangkok';
+
+const DEFAULT_SETTINGS = {
+  expenseCategories: ['อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/ค่าน้ำไฟ', 'ที่พัก', 'สุขภาพ', 'บันเทิง', 'โอนให้คนอื่น', 'อื่น ๆ'],
+  incomeCategories: ['เงินเดือน', 'โบนัส', 'ขายของ', 'รับโอน', 'ดอกเบี้ย/ปันผล', 'อื่น ๆ'],
+  accounts: ['เงินสด'],
+  budgets: {},
+  recurring: [],
+  weeklyEmail: false,
+};
+
+// กด Run ฟังก์ชันนี้หนึ่งครั้งในหน้า Apps Script เพื่ออนุญาตสิทธิ์ทั้งหมด
+function authorize() {
+  sheet_();
+  folder_();
+  ScriptApp.getProjectTriggers();
+  MailApp.getRemainingDailyQuota();
+  Logger.log('OK — อนุญาตสิทธิ์เรียบร้อย');
+}
 
 function doPost(e) {
   let req;
@@ -34,15 +55,27 @@ function doPost(e) {
   try {
     switch (req.action) {
       case 'ping':
-        return json_({ ok: true, sheet: SpreadsheetApp.getActiveSpreadsheet().getUrl(), folder: folder_().getUrl() });
+        return json_({ ok: true, version: 2, sheet: SpreadsheetApp.getActiveSpreadsheet().getUrl(), folder: folder_().getUrl() });
+      case 'bootstrap':
+        runRecurring_();
+        return json_({ items: list_(), settings: getSettings_() });
       case 'list':
         return json_({ items: list_() });
       case 'add':
         return json_(add_(req.tx, req.slip));
+      case 'update':
+        return json_(update_(req.id, req.patch, req.slip));
       case 'delete':
         return json_(delete_(req.id));
       case 'slip':
         return json_(slip_(req.id));
+      case 'getSettings':
+        return json_({ settings: getSettings_() });
+      case 'saveSettings':
+        return json_({ settings: saveSettings_(req.settings) });
+      case 'testEmail':
+        weeklySummary();
+        return json_({ ok: true, to: Session.getEffectiveUser().getEmail() });
       default:
         return json_({ error: 'unknown action' });
     }
@@ -51,9 +84,8 @@ function doPost(e) {
   }
 }
 
-// เปิด URL ด้วยเบราว์เซอร์เพื่อเช็คว่าสคริปต์ทำงาน
 function doGet() {
-  return json_({ ok: true, app: 'เป๋าตังค์' });
+  return json_({ ok: true, app: 'เป๋าตังค์', version: 2 });
 }
 
 // ---------- helpers ----------
@@ -67,8 +99,11 @@ function sheet_() {
   let sh = ss.getSheetByName(TAB);
   if (!sh) {
     sh = ss.insertSheet(TAB, 0);
-    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+    sh.getRange(1, 1, 1, NCOL).setValues([HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (sh.getRange(1, NCOL).getValue() !== HEADERS[NCOL - 1]) {
+    // migrate v1 sheet: add new header columns
+    sh.getRange(1, 1, 1, NCOL).setValues([HEADERS]).setFontWeight('bold');
   }
   return sh;
 }
@@ -87,6 +122,10 @@ function folder_() {
   return f;
 }
 
+function today_() {
+  return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+}
+
 function rowToTx_(r) {
   return {
     id: String(r[0]),
@@ -94,32 +133,62 @@ function rowToTx_(r) {
     date: String(r[2]),
     type: r[3] === 'income' ? 'income' : 'expense',
     amount: Number(String(r[4]).replace(/,/g, '')) || 0,
-    category: String(r[5]),
-    note: String(r[6]),
-    bank: String(r[7]),
-    transRef: String(r[8]),
-    slipFileId: String(r[9]),
+    category: String(r[5] || ''),
+    note: String(r[6] || ''),
+    bank: String(r[7] || ''),
+    transRef: String(r[8] || ''),
+    slipFileId: String(r[9] || ''),
+    account: String(r[10] || ''),
   };
+}
+
+function txToRow_(tx) {
+  return [
+    tx.id, tx.createdAt, tx.date, tx.type, Number(tx.amount),
+    tx.category || '', tx.note || '', tx.bank || '', tx.transRef || '', tx.slipFileId || '', tx.account || '',
+  ];
 }
 
 function rows_() {
   const sh = sheet_();
   const n = sh.getLastRow() - 1;
   if (n < 1) return [];
-  // display values keep dates as the text we wrote
-  return sh.getRange(2, 1, n, HEADERS.length).getDisplayValues();
+  return sh.getRange(2, 1, n, NCOL).getDisplayValues();
 }
 
-// ---------- actions ----------
+function writeRow_(rowNum, tx) {
+  const sh = sheet_();
+  // text columns stay text (no auto date conversion); amount stays a number for SUM()
+  sh.getRange(rowNum, 1, 1, 4).setNumberFormat('@');
+  sh.getRange(rowNum, 6, 1, NCOL - 5).setNumberFormat('@');
+  sh.getRange(rowNum, 5).setNumberFormat('#,##0.00');
+  sh.getRange(rowNum, 1, 1, NCOL).setValues([txToRow_(tx)]);
+}
+
+function saveSlip_(slip) {
+  if (!slip || !slip.data) return '';
+  const blob = Utilities.newBlob(Utilities.base64Decode(slip.data), slip.mime || 'image/jpeg', slip.name || 'slip.jpg');
+  return folder_().createFile(blob).getId();
+}
+
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- transactions ----------
 
 function list_() {
   return rows_().filter(function (r) { return r[0]; }).map(rowToTx_);
 }
 
 function add_(tx, slip) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
+  return withLock_(function () {
     if (tx.transRef) {
       const dup = rows_().filter(function (r) { return r[8] === tx.transRef; })[0];
       if (dup) {
@@ -127,36 +196,40 @@ function add_(tx, slip) {
         return { error: 'สลิปนี้บันทึกไปแล้ว (' + d.date + ', ' + d.amount + ' บาท)', duplicate: true };
       }
     }
-
-    let slipFileId = '';
-    if (slip && slip.data) {
-      const blob = Utilities.newBlob(Utilities.base64Decode(slip.data), slip.mime || 'image/jpeg', slip.name || 'slip.jpg');
-      slipFileId = folder_().createFile(blob).getId();
-    }
-
-    const sh = sheet_();
-    const row = sh.getLastRow() + 1;
-    // text columns stay text (no auto date conversion); amount stays a number for SUM()
-    sh.getRange(row, 1, 1, 4).setNumberFormat('@');
-    sh.getRange(row, 6, 1, 5).setNumberFormat('@');
-    sh.getRange(row, 5).setNumberFormat('#,##0.00');
-    const values = [[
-      tx.id, tx.createdAt, tx.date, tx.type, Number(tx.amount),
-      tx.category || '', tx.note || '', tx.bank || '', tx.transRef || '', slipFileId,
-    ]];
-    sh.getRange(row, 1, 1, HEADERS.length).setValues(values);
-
-    tx.slipFileId = slipFileId;
+    tx.slipFileId = saveSlip_(slip) || tx.slipFileId || '';
+    writeRow_(sheet_().getLastRow() + 1, tx);
     return { item: tx };
-  } finally {
-    lock.releaseLock();
-  }
+  });
+}
+
+function update_(id, patch, slip) {
+  return withLock_(function () {
+    const rows = rows_();
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] !== id) continue;
+      const tx = rowToTx_(rows[i]);
+      ['date', 'type', 'amount', 'category', 'note', 'bank', 'transRef', 'account'].forEach(function (k) {
+        if (patch && patch[k] !== undefined) tx[k] = patch[k];
+      });
+      if (tx.transRef) {
+        const dup = rows.filter(function (r, j) { return j !== i && r[8] === tx.transRef; })[0];
+        if (dup) return { error: 'เลขอ้างอิงนี้ซ้ำกับรายการอื่น', duplicate: true };
+      }
+      if (slip && slip.data) {
+        if (tx.slipFileId) {
+          try { DriveApp.getFileById(tx.slipFileId).setTrashed(true); } catch (err) {}
+        }
+        tx.slipFileId = saveSlip_(slip);
+      }
+      writeRow_(i + 2, tx);
+      return { item: tx };
+    }
+    return { error: 'ไม่พบรายการ' };
+  });
 }
 
 function delete_(id) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
+  return withLock_(function () {
     const rows = rows_();
     for (let i = 0; i < rows.length; i++) {
       if (rows[i][0] === id) {
@@ -169,14 +242,11 @@ function delete_(id) {
       }
     }
     return { error: 'ไม่พบรายการ' };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 function slip_(fileId) {
   const file = DriveApp.getFileById(fileId);
-  // only serve files that live in our slip folder
   const parents = file.getParents();
   const folderId = folder_().getId();
   let ok = false;
@@ -184,4 +254,147 @@ function slip_(fileId) {
   if (!ok) return { error: 'not found' };
   const blob = file.getBlob();
   return { mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
+}
+
+// ---------- settings ----------
+
+function getSettings_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('SETTINGS');
+  let s = {};
+  try { s = raw ? JSON.parse(raw) : {}; } catch (err) {}
+  const out = {};
+  Object.keys(DEFAULT_SETTINGS).forEach(function (k) {
+    out[k] = s[k] !== undefined ? s[k] : DEFAULT_SETTINGS[k];
+  });
+  return out;
+}
+
+function saveSettings_(s) {
+  const clean = getSettings_();
+  Object.keys(DEFAULT_SETTINGS).forEach(function (k) {
+    if (s && s[k] !== undefined) clean[k] = s[k];
+  });
+  const raw = JSON.stringify(clean);
+  if (raw.length > 8500) throw new Error('ตั้งค่ามากเกินไป ลองลดจำนวนหมวดหรือรายการประจำ');
+  PropertiesService.getScriptProperties().setProperty('SETTINGS', raw);
+  syncTriggers_(clean);
+  return clean;
+}
+
+function syncTriggers_(s) {
+  const existing = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'weeklySummary'; });
+  if (s.weeklyEmail && existing.length === 0) {
+    ScriptApp.newTrigger('weeklySummary').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(19).inTimezone(TZ).create();
+  } else if (!s.weeklyEmail) {
+    existing.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  }
+  // daily trigger keeps recurring items on time even if the app isn't opened
+  const daily = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'dailyJob'; });
+  if (s.recurring && s.recurring.length && daily.length === 0) {
+    ScriptApp.newTrigger('dailyJob').timeBased().everyDays(1).atHour(6).inTimezone(TZ).create();
+  } else if ((!s.recurring || !s.recurring.length) && daily.length) {
+    daily.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  }
+}
+
+// ---------- recurring ----------
+
+function dailyJob() {
+  runRecurring_();
+}
+
+function runRecurring_() {
+  const s = getSettings_();
+  if (!s.recurring || !s.recurring.length) return;
+  const props = PropertiesService.getScriptProperties();
+  let done = {};
+  try { done = JSON.parse(props.getProperty('RECURRING_DONE') || '{}'); } catch (err) {}
+  const today = today_();
+  const ym = today.slice(0, 7);
+  const dayNow = Number(today.slice(8, 10));
+  let changed = false;
+
+  withLock_(function () {
+    s.recurring.forEach(function (r) {
+      if (!r || !r.id || !(Number(r.amount) > 0)) return;
+      const day = Math.min(Math.max(Number(r.day) || 1, 1), 28);
+      if (dayNow < day || done[r.id] === ym) return;
+      const tx = {
+        id: Utilities.getUuid(),
+        createdAt: new Date().toISOString(),
+        date: ym + '-' + ('0' + day).slice(-2),
+        type: r.type === 'income' ? 'income' : 'expense',
+        amount: Number(r.amount),
+        category: r.category || '',
+        note: (r.note || '') + ' (ประจำ)',
+        bank: '',
+        transRef: '',
+        slipFileId: '',
+        account: r.account || '',
+      };
+      writeRow_(sheet_().getLastRow() + 1, tx);
+      done[r.id] = ym;
+      changed = true;
+    });
+  });
+  if (changed) props.setProperty('RECURRING_DONE', JSON.stringify(done));
+}
+
+// ---------- weekly email ----------
+
+function fmt_(n) {
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function weeklySummary() {
+  runRecurring_();
+  const s = getSettings_();
+  const items = list_();
+  const now = new Date();
+  const to = today_();
+  const from = Utilities.formatDate(new Date(now.getTime() - 6 * 86400000), TZ, 'yyyy-MM-dd');
+  const ym = to.slice(0, 7);
+
+  const week = items.filter(function (t) { return t.date >= from && t.date <= to; });
+  const month = items.filter(function (t) { return t.date.slice(0, 7) === ym; });
+  const sum = function (arr, type) {
+    return arr.filter(function (t) { return t.type === type; }).reduce(function (a, t) { return a + t.amount; }, 0);
+  };
+
+  const byCat = {};
+  week.filter(function (t) { return t.type === 'expense'; }).forEach(function (t) {
+    byCat[t.category || 'อื่น ๆ'] = (byCat[t.category || 'อื่น ๆ'] || 0) + t.amount;
+  });
+  const catRows = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; }).map(function (c) {
+    return '<tr><td>' + c + '</td><td style="text-align:right">' + fmt_(byCat[c]) + '</td></tr>';
+  }).join('');
+
+  const monthCat = {};
+  month.filter(function (t) { return t.type === 'expense'; }).forEach(function (t) {
+    monthCat[t.category] = (monthCat[t.category] || 0) + t.amount;
+  });
+  const budgetRows = Object.keys(s.budgets || {}).filter(function (c) { return s.budgets[c] > 0; }).map(function (c) {
+    const used = monthCat[c] || 0;
+    const pct = Math.round((used / s.budgets[c]) * 100);
+    const color = pct >= 100 ? '#b4452f' : pct >= 80 ? '#c98a12' : '#0f7a52';
+    return '<tr><td>' + c + '</td><td style="text-align:right;color:' + color + '">' + fmt_(used) + ' / ' + fmt_(s.budgets[c]) + ' (' + pct + '%)</td></tr>';
+  }).join('');
+
+  const html =
+    '<div style="font-family:sans-serif;max-width:480px">' +
+    '<h2 style="color:#0d5c46">เป๋าตังค์ — สรุปสัปดาห์</h2>' +
+    '<p>' + from + ' ถึง ' + to + '</p>' +
+    '<p>รายรับ <b style="color:#0f7a52">' + fmt_(sum(week, 'income')) + '</b> บาท · ' +
+    'รายจ่าย <b style="color:#b4452f">' + fmt_(sum(week, 'expense')) + '</b> บาท</p>' +
+    (catRows ? '<h3>รายจ่ายตามหมวด (7 วัน)</h3><table width="100%">' + catRows + '</table>' : '<p>สัปดาห์นี้ไม่มีรายจ่าย</p>') +
+    '<h3>เดือนนี้</h3><p>รับ ' + fmt_(sum(month, 'income')) + ' · จ่าย ' + fmt_(sum(month, 'expense')) +
+    ' · คงเหลือ ' + fmt_(sum(month, 'income') - sum(month, 'expense')) + ' บาท</p>' +
+    (budgetRows ? '<h3>งบประมาณเดือนนี้</h3><table width="100%">' + budgetRows + '</table>' : '') +
+    '</div>';
+
+  MailApp.sendEmail({
+    to: Session.getEffectiveUser().getEmail(),
+    subject: 'เป๋าตังค์ · สรุปสัปดาห์ ' + from + ' – ' + to,
+    htmlBody: html,
+  });
 }
