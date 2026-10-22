@@ -1,7 +1,9 @@
 "use client";
+import { Camera, Sparkles, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { prepareSlip, type Prepared } from "@/lib/image";
-import { todayISO } from "@/lib/format";
+import { baht, cleanAmount, dayLabel, fullDate, todayISO } from "@/lib/format";
+import { iconFor } from "@/lib/icons";
 import type { ScanResult, Settings, Tx, TxType } from "@/lib/types";
 
 interface Props {
@@ -9,7 +11,9 @@ interface Props {
   scanEnabled: boolean;
   editing?: Tx;
   file?: Blob | null;
+  defaultDate?: string;
   queue?: { index: number; total: number };
+  findByRef: (ref: string) => Tx | undefined;
   onClose: () => void;
   onSkip?: () => void;
   onSaved: (tx: Tx, wasEdit: boolean) => void;
@@ -21,12 +25,18 @@ function matchAccount(accounts: string[], bank?: string) {
   return accounts.find((a) => a && (a.includes(b) || b.includes(a.replace(/^ธนาคาร/, "").trim()))) || "";
 }
 
-export default function TxForm({ settings, scanEnabled, editing, file, queue, onClose, onSkip, onSaved }: Props) {
+const yesterdayISO = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return todayISO(d);
+};
+
+export default function TxForm({ settings, scanEnabled, editing, file, defaultDate, queue, findByRef, onClose, onSkip, onSaved }: Props) {
   const [type, setType] = useState<TxType>(editing?.type || "expense");
   const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
   const [category, setCategory] = useState(editing?.category || "");
   const [account, setAccount] = useState(editing ? editing.account : settings.accounts[0] || "");
-  const [date, setDate] = useState(editing?.date || todayISO());
+  const [date, setDate] = useState(editing?.date || defaultDate || todayISO());
   const [note, setNote] = useState(editing?.note || "");
   const [bank, setBank] = useState(editing?.bank || "");
   const [transRef, setTransRef] = useState(editing?.transRef || "");
@@ -34,18 +44,27 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
   const [reading, setReading] = useState("");
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanErr, setScanErr] = useState("");
+  const [dup, setDup] = useState<Tx | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
   const touched = useRef<Set<string>>(new Set());
   const touch = (k: string) => touched.current.add(k);
+  const typeRef = useRef(type);
+  typeRef.current = type;
+
+  function checkDup(ref: string) {
+    const hit = ref ? findByRef(ref) : undefined;
+    setDup(hit && hit.id !== editing?.id ? hit : null);
+  }
 
   async function handleFile(f: Blob) {
     setErr("");
     setScan(null);
     setScanErr("");
-    setReading("กำลังอ่าน QR…");
+    setDup(null);
+    setReading("น้องหมูกำลังอ่าน QR…");
     let p: Prepared;
     try {
       p = await prepareSlip(f);
@@ -57,12 +76,18 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
     setSlip(p);
     const qr = p.qr;
     if (qr?.kind === "slip") {
-      if (qr.transRef) setTransRef(qr.transRef);
+      if (qr.transRef) {
+        setTransRef(qr.transRef);
+        checkDup(qr.transRef);
+      }
       if (qr.bank) setBank(qr.bank);
       if (!touched.current.has("account")) {
         const acc = matchAccount(settings.accounts, qr.bank);
         if (acc) setAccount(acc);
       }
+      // slip refs usually start with the transfer date (YYYYMMDD)
+      const m = qr.transRef?.match(/^(20\d{2})(\d{2})(\d{2})/);
+      if (m && !touched.current.has("date") && Number(m[2]) <= 12 && Number(m[3]) <= 31) setDate(`${m[1]}-${m[2]}-${m[3]}`);
     }
     if (qr?.kind === "promptpay") {
       if (qr.amount && !touched.current.has("amount")) setAmount(String(qr.amount));
@@ -85,16 +110,19 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
           if (r.amount && !t.has("amount")) setAmount(String(r.amount));
           if (r.date && !t.has("date")) setDate(r.date);
           if (!t.has("note")) {
-            const who = type === "income" ? r.fromName : r.toName;
+            const who = typeRef.current === "income" ? r.fromName : r.toName;
             const n = [r.memo, who].filter(Boolean).join(" · ");
             if (n) setNote(n);
           }
           if (!t.has("category") && r.suggestedCategory) {
-            const list = type === "income" ? settings.incomeCategories : settings.expenseCategories;
+            const list = typeRef.current === "income" ? settings.incomeCategories : settings.expenseCategories;
             if (list.includes(r.suggestedCategory)) setCategory(r.suggestedCategory);
           }
-          if (r.transRef && !(qr?.kind === "slip")) setTransRef(r.transRef);
-          if (r.fromBank && !(qr?.kind === "slip")) setBank(r.fromBank);
+          if (r.transRef && qr?.kind !== "slip") {
+            setTransRef(r.transRef);
+            checkDup(r.transRef);
+          }
+          if (r.fromBank && qr?.kind !== "slip") setBank(r.fromBank);
           if (!t.has("account")) {
             const acc = matchAccount(settings.accounts, r.fromBank || qr?.bank);
             if (acc) setAccount(acc);
@@ -105,18 +133,25 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
       }
     }
     setReading("");
-    setTimeout(() => amountRef.current?.focus(), 50);
+    setTimeout(() => amountRef.current?.focus({ preventScroll: true }), 50);
   }
 
   useEffect(() => {
     if (file) handleFile(file);
+    else if (!editing) setTimeout(() => amountRef.current?.focus({ preventScroll: true }), 250);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const cats = type === "expense" ? settings.expenseCategories : settings.incomeCategories;
   const qr = slip?.qr;
+  const amountNum = Number(amount);
 
   async function save() {
+    if (!(amountNum > 0)) {
+      setErr("ใส่จำนวนเงินก่อนนะคะ");
+      amountRef.current?.focus();
+      return;
+    }
     setBusy(true);
     setErr("");
     const fd = new FormData();
@@ -144,18 +179,17 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
   }
 
   const slipThumb = slip?.previewUrl || (editing?.slipFileId ? `/api/slip/${editing.slipFileId}` : "");
+  const isLast = !queue || queue.index + 1 >= queue.total;
 
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label={editing ? "แก้ไขรายการ" : "เพิ่มรายการ"}>
+      <div className={`sheet ${type}`} role="dialog" aria-label={editing ? "แก้ไขรายการ" : "เพิ่มรายการ"}>
         <div className="grab" />
         <div className="sheet-head">
-          <b>{editing ? "แก้ไขรายการ" : "เพิ่มรายการ"}</b>
+          <b>{editing ? "✏️ แก้ไขรายการ" : type === "income" ? "💰 เงินเข้า" : "🌸 จดรายจ่าย"}</b>
           {queue && queue.total > 1 && (
-            <span className="badge">
-              สลิป {queue.index + 1}/{queue.total}
-            </span>
+            <span className="badge">สลิป {queue.index + 1}/{queue.total}</span>
           )}
         </div>
         <div className="seg">
@@ -165,6 +199,7 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
           <button className={`income ${type === "income" ? "on" : ""}`} onClick={() => { setType("income"); if (!settings.incomeCategories.includes(category)) setCategory(""); }}>
             รายรับ
           </button>
+          <i className="seg-pill" />
         </div>
 
         <input
@@ -179,12 +214,12 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
           }}
         />
         {slipThumb || reading ? (
-          <div className="slip-box">
+          <div className={`slip-box ${reading ? "reading" : ""}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {slipThumb ? <img src={slipThumb} alt="สลิป" /> : <img alt="" />}
+            {slipThumb ? <img src={slipThumb} alt="สลิป" /> : <span className="img-ph" />}
             <div className="meta">
               {reading ? (
-                <span className="pulse">{reading}</span>
+                <span className="pulse"><Sparkles size={14} /> {reading}</span>
               ) : !slip ? (
                 <small>สลิปเดิม — กด “เปลี่ยน” เพื่อแนบใหม่</small>
               ) : (
@@ -197,42 +232,60 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
                     <div className="muted">ไม่พบ QR ในรูป</div>
                   )}
                   {scan && scan.isSlip !== false && scan.amount ? (
-                    <div className="ok">✓ AI อ่านยอด {scan.amount.toLocaleString("th-TH")} บาท — ตรวจอีกครั้ง</div>
+                    <div className="ok">✨ AI อ่านยอด {baht(scan.amount)} บาท — เช็กอีกทีนะคะ</div>
                   ) : scan && scan.isSlip === false ? (
                     <small>AI: รูปนี้ไม่น่าใช่สลิป</small>
                   ) : scanErr ? (
                     <small className="warn">AI อ่านไม่สำเร็จ: {scanErr}</small>
                   ) : null}
-                  {transRef && <small>Ref {transRef}</small>}
+                  {transRef && <small className="num">Ref {transRef}</small>}
                 </>
               )}
             </div>
-            <button className="icon-btn" onClick={() => fileRef.current?.click()}>เปลี่ยน</button>
+            <button className="icon-btn" onClick={() => fileRef.current?.click()} disabled={!!reading}>เปลี่ยน</button>
           </div>
         ) : (
-          <button className="btn ghost" style={{ marginTop: 0 }} onClick={() => fileRef.current?.click()}>
-            📎 แนบสลิป / รูป QR
+          <button className="attach" onClick={() => fileRef.current?.click()}>
+            <Camera size={20} /> แนบสลิป / รูป QR <small>(ไม่บังคับ)</small>
           </button>
         )}
 
-        <label className="f">จำนวนเงิน</label>
+        {dup && (
+          <div className="dup pop-in" role="alert">
+            <TriangleAlert size={18} />
+            <div>
+              <b>สลิปนี้บันทึกไปแล้วค่ะ</b>
+              <small>{dayLabel(dup.date)} · {baht(dup.amount)} บาท{dup.note ? ` · ${dup.note}` : ""}</small>
+            </div>
+            {onSkip && queue && queue.total > 1 ? (
+              <button className="chip on" onClick={onSkip}>ข้ามใบนี้</button>
+            ) : (
+              <button className="chip on" onClick={onClose}>ปิด</button>
+            )}
+          </div>
+        )}
+
+        <label className="f" htmlFor="amt">จำนวนเงิน</label>
         <div className="amount-input">
+          <span className="cur">฿</span>
           <input
+            id="amt"
             ref={amountRef}
             className="num"
             inputMode="decimal"
+            enterKeyHint="done"
             placeholder="0"
             value={amount}
-            onChange={(e) => { touch("amount"); setAmount(e.target.value.replace(/[^\d.]/g, "")); }}
+            onChange={(e) => { touch("amount"); setAmount(cleanAmount(e.target.value)); setErr(""); }}
           />
-          <span>บาท</span>
         </div>
 
         <label className="f">หมวด</label>
         <div className="chips">
           {cats.map((c) => (
             <button key={c} className={`chip ${category === c ? "on" : ""}`} onClick={() => { touch("category"); setCategory(category === c ? "" : c); }}>
-              {c}
+              <span className="chip-ic">{iconFor(c, type)}</span>
+              {c.replace(/^\p{Extended_Pictographic}\s*/u, "")}
             </button>
           ))}
         </div>
@@ -243,28 +296,31 @@ export default function TxForm({ settings, scanEnabled, editing, file, queue, on
             <div className="chips">
               {settings.accounts.map((a) => (
                 <button key={a} className={`chip ${account === a ? "on" : ""}`} onClick={() => { touch("account"); setAccount(account === a ? "" : a); }}>
-                  {a}
+                  👛 {a}
                 </button>
               ))}
             </div>
           </>
         )}
 
-        <label className="f">วันที่</label>
-        <input className="in" type="date" value={date} onChange={(e) => { touch("date"); setDate(e.target.value); }} />
+        <label className="f" htmlFor="dt">วันที่</label>
+        <div className="date-row">
+          <button className={`chip ${date === todayISO() ? "on" : ""}`} onClick={() => { touch("date"); setDate(todayISO()); }}>วันนี้</button>
+          <button className={`chip ${date === yesterdayISO() ? "on" : ""}`} onClick={() => { touch("date"); setDate(yesterdayISO()); }}>เมื่อวาน</button>
+          <input id="dt" className="in" type="date" value={date} max="2100-12-31" onChange={(e) => { touch("date"); if (e.target.value) setDate(e.target.value); }} />
+        </div>
+        <small className="date-hint">{fullDate(date)}</small>
 
-        <label className="f">หมายเหตุ</label>
-        <input className="in" placeholder="เช่น ค่าข้าวกลางวัน" value={note} onChange={(e) => { touch("note"); setNote(e.target.value); }} />
+        <label className="f" htmlFor="nt">หมายเหตุ</label>
+        <input id="nt" className="in" placeholder="เช่น ชานมไข่มุก 🧋" value={note} onChange={(e) => { touch("note"); setNote(e.target.value); }} />
 
-        <button className="btn" disabled={busy || !!reading || !(Number(amount) > 0)} onClick={save}>
-          {busy ? "กำลังบันทึก…" : editing ? "บันทึกการแก้ไข" : queue && queue.index + 1 < queue.total ? "บันทึก แล้วไปใบถัดไป" : "บันทึก"}
+        <button className="btn" disabled={busy || !!reading} onClick={save}>
+          {busy ? <span className="pulse">กำลังบันทึก…</span> : editing ? "บันทึกการแก้ไข 💾" : isLast ? "บันทึก 💖" : "บันทึก แล้วไปใบถัดไป →"}
         </button>
-        {onSkip && queue && queue.total > 1 && (
-          <button className="btn ghost" disabled={busy} onClick={onSkip}>
-            ข้ามสลิปนี้
-          </button>
+        {onSkip && queue && queue.total > 1 && !dup && (
+          <button className="btn ghost" disabled={busy} onClick={onSkip}>ข้ามสลิปนี้</button>
         )}
-        {err && <div className="err">{err}</div>}
+        {err && <div className="err pop-in">{err}</div>}
       </div>
     </>
   );

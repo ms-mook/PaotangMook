@@ -20,8 +20,8 @@ export default function manifest(): ManifestWithShare {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f4f1ea",
-    theme_color: "#0d5c46",
+    background_color: "#ffeef6",
+    theme_color: "#ff8fc0",
     lang: "th",
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },

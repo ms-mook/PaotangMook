@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { baht, daysLeft, monthLabel, shiftMonth } from "@/lib/format";
+import { baht, daysInMonth, daysLeft, monthLabel, shiftMonth, todayISO, WEEKDAYS_SHORT } from "@/lib/format";
 import { iconFor, PALETTE } from "@/lib/icons";
 import type { Settings, Tx, TxType } from "@/lib/types";
 
@@ -57,7 +57,43 @@ function Bars({ data }: { data: { label: string; inc: number; exp: number }[] })
   );
 }
 
-export default function StatsView({ allItems, month, settings }: { allItems: Tx[]; month: string; settings: Settings }) {
+function SpendCalendar({ items, month, onPickDay }: { items: Tx[]; month: string; onPickDay: (d: string) => void }) {
+  const today = todayISO();
+  const n = daysInMonth(month);
+  const [y, m] = month.split("-").map(Number);
+  const lead = new Date(y, m - 1, 1).getDay();
+  const per: Record<string, { exp: number; inc: number }> = {};
+  for (const t of items) {
+    const e = (per[t.date] ||= { exp: 0, inc: 0 });
+    if (t.type === "income") e.inc += t.amount;
+    else e.exp += t.amount;
+  }
+  const max = Math.max(1, ...Object.values(per).map((v) => v.exp));
+  return (
+    <div className="cal">
+      {WEEKDAYS_SHORT.map((w) => <span key={w} className="cal-h">{w}</span>)}
+      {Array.from({ length: lead }, (_, i) => <span key={"e" + i} />)}
+      {Array.from({ length: n }, (_, i) => {
+        const d = `${month}-${String(i + 1).padStart(2, "0")}`;
+        const v = per[d];
+        const level = v?.exp ? Math.ceil((v.exp / max) * 4) : 0;
+        return (
+          <button
+            key={d}
+            className={`cal-d lv${level} ${d === today ? "today" : ""} ${v?.inc ? "has-inc" : ""}`}
+            onClick={() => onPickDay(d)}
+            aria-label={`วันที่ ${i + 1}${v ? ` จ่าย ${baht(v.exp)} บาท` : ""}`}
+            title={v ? `จ่าย ${baht(v.exp)}${v.inc ? ` · รับ ${baht(v.inc)}` : ""}` : ""}
+          >
+            {i + 1}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function StatsView({ allItems, month, settings, onPickDay }: { allItems: Tx[]; month: string; settings: Settings; onPickDay: (d: string) => void }) {
   const [kind, setKind] = useState<TxType>("expense");
   const monthItems = useMemo(() => allItems.filter((t) => t.date.startsWith(month)), [allItems, month]);
 
@@ -109,8 +145,8 @@ export default function StatsView({ allItems, month, settings }: { allItems: Tx[
   return (
     <>
       {(budgets.length > 0 || settings.monthlyLimit > 0) && (
-        <section className="panel">
-          <h3>งบประมาณ · {monthLabel(month)}</h3>
+        <section className="panel glass">
+          <h3>🎯 งบประมาณ · {monthLabel(month)}</h3>
           {settings.monthlyLimit > 0 && (() => {
             const used = trend[5].exp, limit = settings.monthlyLimit;
             const pct = Math.round((used / limit) * 100);
@@ -150,16 +186,22 @@ export default function StatsView({ allItems, month, settings }: { allItems: Tx[
         </section>
       )}
 
-      <section className="panel">
+      <section className="panel glass">
+        <h3>🗓️ ปฏิทินรายจ่าย</h3>
+        <SpendCalendar items={monthItems} month={month} onPickDay={onPickDay} />
+        <div className="cal-legend"><span>น้อย</span><i className="lv1" /><i className="lv2" /><i className="lv3" /><i className="lv4" /><span>มาก</span><span className="inc-mark">• มีรายรับ</span></div>
+      </section>
+
+      <section className="panel glass">
         <div className="panel-head">
-          <h3>แยกตามหมวด</h3>
+          <h3>🍩 แยกตามหมวด</h3>
           <div className="seg mini">
             <button className={`expense ${kind === "expense" ? "on" : ""}`} onClick={() => setKind("expense")}>จ่าย</button>
             <button className={`income ${kind === "income" ? "on" : ""}`} onClick={() => setKind("income")}>รับ</button>
           </div>
         </div>
         {catTotal === 0 ? (
-          <div className="empty small">ไม่มี{kind === "income" ? "รายรับ" : "รายจ่าย"}ในเดือนนี้</div>
+          <div className="empty-cute small">ไม่มี{kind === "income" ? "รายรับ" : "รายจ่าย"}ในเดือนนี้</div>
         ) : (
           <div className="donut-wrap">
             <Donut parts={parts} total={catTotal} />
@@ -177,8 +219,8 @@ export default function StatsView({ allItems, month, settings }: { allItems: Tx[
         )}
       </section>
 
-      <section className="panel">
-        <h3>6 เดือนล่าสุด</h3>
+      <section className="panel glass">
+        <h3>📈 6 เดือนล่าสุด</h3>
         <Bars data={trend} />
         <div className="legend-inline">
           <span><i style={{ background: "var(--income)" }} /> รายรับ</span>
@@ -195,8 +237,8 @@ export default function StatsView({ allItems, month, settings }: { allItems: Tx[
       </section>
 
       {accounts.length > 0 && (
-        <section className="panel">
-          <h3>บัญชี / กระเป๋า</h3>
+        <section className="panel glass">
+          <h3>👛 บัญชี / กระเป๋า</h3>
           <div className="list flat">
             {accounts.map((a) => (
               <div className="row" key={a.name}>

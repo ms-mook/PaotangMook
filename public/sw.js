@@ -1,5 +1,5 @@
 // เป๋าตังค์ service worker: app-shell cache + Android share target for slips.
-const SHELL = "pt-shell-v2";
+const SHELL = "pt-shell-v3";
 const SHARE = "pt-share";
 
 self.addEventListener("install", (e) => {

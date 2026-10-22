@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { baht } from "@/lib/format";
+import { iconFor } from "@/lib/icons";
 import type { Recurring, Settings, TxType } from "@/lib/types";
 
 function TagEditor({ items, onChange, placeholder }: { items: string[]; onChange: (v: string[]) => void; placeholder: string }) {
@@ -50,9 +51,10 @@ interface Props {
   settings: Settings;
   scanEnabled: boolean;
   onSaved: (s: Settings) => void;
+  onLogout: () => void;
 }
 
-export default function SettingsView({ settings, scanEnabled, onSaved }: Props) {
+export default function SettingsView({ settings, scanEnabled, onSaved, onLogout }: Props) {
   const [s, setS] = useState<Settings>(settings);
   const [rec, setRec] = useState<Recurring>(blankRec(settings));
   const [busy, setBusy] = useState(false);
@@ -107,8 +109,8 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
 
   return (
     <div className="settings">
-      <section className="panel">
-        <h3>วงเงินใช้จ่ายต่อเดือน</h3>
+      <section className="panel glass">
+        <h3>💗 วงเงินใช้จ่ายต่อเดือน</h3>
         <p className="hint">รายจ่ายรวมทุกหมวดต่อเดือน — แสดงบนหน้าหลักและเตือนเมื่อใช้ถึง 80% (เว้นว่าง = ไม่จำกัด)</p>
         <div className="amount-input">
           <input
@@ -118,35 +120,35 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
             value={s.monthlyLimit || ""}
             onChange={(e) => set("monthlyLimit", Number(e.target.value.replace(/\D/g, "")) || 0)}
           />
-          <span>บาท / เดือน</span>
+          <span>บาท/เดือน</span>
         </div>
         {s.monthlyLimit > 0 && budgetSum > s.monthlyLimit && (
           <small className="near">งบรายหมวดรวมกัน {baht(budgetSum)} บาท มากกว่าวงเงินรวม</small>
         )}
       </section>
 
-      <section className="panel">
-        <h3>หมวดรายจ่าย</h3>
+      <section className="panel glass">
+        <h3>🌸 หมวดรายจ่าย</h3>
         <TagEditor items={s.expenseCategories} onChange={(v) => set("expenseCategories", v)} placeholder="เพิ่มหมวด เช่น ☕ กาแฟ" />
       </section>
 
-      <section className="panel">
-        <h3>หมวดรายรับ</h3>
+      <section className="panel glass">
+        <h3>💰 หมวดรายรับ</h3>
         <TagEditor items={s.incomeCategories} onChange={(v) => set("incomeCategories", v)} placeholder="เพิ่มหมวดรายรับ" />
       </section>
 
-      <section className="panel">
-        <h3>บัญชี / กระเป๋า</h3>
+      <section className="panel glass">
+        <h3>👛 บัญชี / กระเป๋า</h3>
         <p className="hint">ตั้งชื่อให้มีชื่อธนาคาร เช่น “กสิกร” หรือ “ไทยพาณิชย์” แอปจะเลือกบัญชีให้อัตโนมัติจากสลิป</p>
         <TagEditor items={s.accounts} onChange={(v) => set("accounts", v)} placeholder="เช่น เงินสด, กสิกร, ไทยพาณิชย์" />
       </section>
 
-      <section className="panel">
-        <h3>งบประมาณรายเดือน</h3>
+      <section className="panel glass">
+        <h3>🎯 งบประมาณรายหมวด</h3>
         <p className="hint">เว้นว่างหมวดที่ไม่ต้องการตั้งงบ — แอปจะเตือนเมื่อใช้ถึง 80%</p>
         {s.expenseCategories.map((c) => (
           <div className="budget-input" key={c}>
-            <span>{c}</span>
+            <span>{iconFor(c, "expense")} {c.replace(/^\p{Extended_Pictographic}\s*/u, "")}</span>
             <input
               className="in num"
               inputMode="numeric"
@@ -164,8 +166,8 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
         ))}
       </section>
 
-      <section className="panel">
-        <h3>รายการประจำทุกเดือน</h3>
+      <section className="panel glass">
+        <h3>🔁 รายการประจำทุกเดือน</h3>
         <p className="hint">ลงรายการให้อัตโนมัติเมื่อถึงวันที่กำหนด (เช่น ค่าเช่า ค่าเน็ต เงินเดือน)</p>
         {s.recurring.length > 0 && (
           <div className="list flat">
@@ -209,8 +211,8 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
         </div>
       </section>
 
-      <section className="panel">
-        <h3>สรุปทางอีเมล</h3>
+      <section className="panel glass">
+        <h3>💌 สรุปทางอีเมล</h3>
         <label className="switch">
           <input type="checkbox" checked={s.weeklyEmail} onChange={(e) => set("weeklyEmail", e.target.checked)} />
           <span>ส่งสรุปรายสัปดาห์ทุกวันอาทิตย์ 19:00 ไปที่อีเมลเจ้าของชีต</span>
@@ -218,8 +220,8 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
         <button className="btn ghost" disabled={busy} onClick={testEmail}>ส่งอีเมลทดสอบตอนนี้</button>
       </section>
 
-      <section className="panel">
-        <h3>AI อ่านสลิป</h3>
+      <section className="panel glass">
+        <h3>✨ AI อ่านสลิป</h3>
         {scanEnabled ? (
           <p className="ok">✓ เปิดใช้งานแล้ว — แอปจะอ่านยอด วันที่ และชื่อผู้รับจากสลิปให้อัตโนมัติ</p>
         ) : (
@@ -230,8 +232,9 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
         )}
       </section>
 
-      <section className="panel">
-        <a href="/setup">ตรวจสถานะการเชื่อมต่อ</a>
+      <section className="panel glass links">
+        <a href="/setup">🔌 ตรวจสถานะการเชื่อมต่อ</a>
+        <button className="link-btn danger-text" onClick={onLogout}>🚪 ออกจากระบบ</button>
       </section>
 
       {msg && !dirty && <p className="ok">{msg}</p>}
