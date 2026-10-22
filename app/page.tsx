@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AddSheet from "@/components/AddSheet";
 import DetailSheet from "@/components/DetailSheet";
 import { baht, dayLabel, monthLabel, shiftMonth, todayISO } from "@/lib/format";
-import type { Tx } from "@/lib/google";
+import type { Tx } from "@/lib/types";
 
 const ICONS: Record<string, string> = {
   อาหาร: "🍜", เดินทาง: "🚕", ช้อปปิ้ง: "🛍️", "บิล/ค่าน้ำไฟ": "💡", ที่พัก: "🏠", สุขภาพ: "💊",

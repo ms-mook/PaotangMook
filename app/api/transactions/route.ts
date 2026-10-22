@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { appendTx, listTx, uploadSlip, type Tx } from "@/lib/google";
+import { addTx, listTx, StoreError } from "@/lib/store";
+import type { Tx } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
+
+const fail = (e: unknown) =>
+  NextResponse.json({ error: (e as Error).message }, { status: e instanceof StoreError ? e.status : 500 });
 
 export async function GET() {
   try {
@@ -9,7 +14,7 @@ export async function GET() {
     items.sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt));
     return NextResponse.json({ items });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    return fail(e);
   }
 }
 
@@ -22,26 +27,8 @@ export async function POST(req: Request) {
     if (!(amount > 0)) return NextResponse.json({ error: "กรุณาใส่จำนวนเงิน" }, { status: 400 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "วันที่ไม่ถูกต้อง" }, { status: 400 });
 
-    const transRef = String(form.get("transRef") || "").trim();
-    if (transRef) {
-      const existing = (await listTx()).find((t) => t.transRef === transRef);
-      if (existing) {
-        return NextResponse.json(
-          { error: `สลิปนี้บันทึกไปแล้ว (${existing.date}, ${existing.amount.toLocaleString("th-TH")} บาท)` },
-          { status: 409 },
-        );
-      }
-    }
-
     const id = crypto.randomUUID();
-    let slipFileId = "";
-    const slip = form.get("slip");
-    if (slip instanceof File && slip.size > 0) {
-      const ext = slip.type === "image/png" ? "png" : "jpg";
-      const name = `${date}_${type === "income" ? "รับ" : "จ่าย"}_${amount}_${transRef || id.slice(0, 8)}.${ext}`;
-      slipFileId = await uploadSlip(name, slip.type || "image/jpeg", await slip.arrayBuffer());
-    }
-
+    const transRef = String(form.get("transRef") || "").trim().slice(0, 64);
     const tx: Tx = {
       id,
       createdAt: new Date().toISOString(),
@@ -52,11 +39,22 @@ export async function POST(req: Request) {
       note: String(form.get("note") || "").slice(0, 300),
       bank: String(form.get("bank") || "").slice(0, 50),
       transRef,
-      slipFileId,
+      slipFileId: "",
     };
-    await appendTx(tx);
-    return NextResponse.json({ item: tx });
+
+    const file = form.get("slip");
+    let slip;
+    if (file instanceof File && file.size > 0) {
+      const ext = file.type === "image/png" ? "png" : "jpg";
+      slip = {
+        name: `${date}_${type === "income" ? "รับ" : "จ่าย"}_${amount}_${transRef || id.slice(0, 8)}.${ext}`,
+        mime: file.type || "image/jpeg",
+        bytes: await file.arrayBuffer(),
+      };
+    }
+
+    return NextResponse.json({ item: await addTx(tx, slip) });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    return fail(e);
   }
 }

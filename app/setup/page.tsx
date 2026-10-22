@@ -1,3 +1,5 @@
+import { ping } from "@/lib/store";
+
 export const dynamic = "force-dynamic";
 
 function Item({ ok, label }: { ok: boolean; label: string }) {
@@ -8,36 +10,37 @@ function Item({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-export default function Setup() {
+export default async function Setup() {
   const e = process.env;
-  const hasClient = !!(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET);
-  const ready = hasClient && !!(e.GOOGLE_REFRESH_TOKEN && e.SHEET_ID && e.DRIVE_FOLDER_ID);
+  const hasScript = !!(e.APPS_SCRIPT_URL && e.APPS_SCRIPT_SECRET);
+  let status: { ok: true; sheet: string; folder: string } | { ok: false; error: string } | null = null;
+  if (hasScript) {
+    try {
+      const r = await ping();
+      status = { ok: true, sheet: r.sheet, folder: r.folder };
+    } catch (err) {
+      status = { ok: false, error: (err as Error).message };
+    }
+  }
+
   return (
     <main className="wrap">
-      <h2>ตั้งค่าการเชื่อม Google</h2>
+      <h2>สถานะการเชื่อมต่อ</h2>
       <ul style={{ listStyle: "none", padding: 0, lineHeight: 2 }}>
         <Item ok={!!e.APP_PIN && !!e.AUTH_SECRET} label="APP_PIN / AUTH_SECRET" />
-        <Item ok={hasClient} label="GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET" />
-        <Item ok={!!e.GOOGLE_REFRESH_TOKEN} label="GOOGLE_REFRESH_TOKEN" />
-        <Item ok={!!e.SHEET_ID} label="SHEET_ID" />
-        <Item ok={!!e.DRIVE_FOLDER_ID} label="DRIVE_FOLDER_ID" />
+        <Item ok={!!e.APPS_SCRIPT_URL} label="APPS_SCRIPT_URL" />
+        <Item ok={!!e.APPS_SCRIPT_SECRET} label="APPS_SCRIPT_SECRET" />
+        <Item ok={!!status?.ok} label="เชื่อม Apps Script สำเร็จ" />
       </ul>
-      {ready ? (
+      {status?.ok ? (
         <p>
-          พร้อมใช้งานแล้ว — <a href="/">ไปหน้าหลัก</a>
+          พร้อมใช้งาน — <a href={status.sheet} target="_blank">เปิดชีต</a> ·{" "}
+          <a href={status.folder} target="_blank">โฟลเดอร์สลิป</a> · <a href="/">ไปหน้าหลัก</a>
         </p>
-      ) : hasClient ? (
-        <>
-          <p>
-            กดปุ่มด้านล่าง ล็อกอิน Google บัญชีที่จะเก็บสลิป แอปจะสร้างชีตและโฟลเดอร์ให้ แล้วแสดงค่าที่ต้องนำไปใส่ใน
-            Vercel
-          </p>
-          <a className="btn" style={{ display: "block", textAlign: "center", textDecoration: "none" }} href="/api/google/auth">
-            เชื่อมบัญชี Google
-          </a>
-        </>
+      ) : status ? (
+        <p className="err">{status.error}</p>
       ) : (
-        <p>ตั้งค่า GOOGLE_CLIENT_ID และ GOOGLE_CLIENT_SECRET ใน Vercel ก่อน แล้ว Redeploy (ดูขั้นตอนใน README)</p>
+        <p>ตั้งค่า APPS_SCRIPT_URL และ APPS_SCRIPT_SECRET ใน Vercel แล้ว Redeploy (ดูขั้นตอนใน README)</p>
       )}
     </main>
   );

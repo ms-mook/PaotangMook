@@ -4,7 +4,7 @@
 
 - **โค้ด**: GitHub → deploy อัตโนมัติขึ้น **Vercel** ทุกครั้งที่ push
 - **ข้อมูลรายการ**: Google Sheets (เปิดดู/แก้เองได้)
-- **รูปสลิป**: โฟลเดอร์ใน Google Drive
+- **รูปสลิป**: โฟลเดอร์ใน Google Drive (ผ่าน Google Apps Script ไม่ต้องใช้ Google Cloud)
 - **ล็อกอิน**: PIN (ใช้คนเดียว)
 
 ## ใช้งาน
@@ -17,17 +17,21 @@
 
 ---
 
-## ตั้งค่าครั้งแรก
+## ตั้งค่าครั้งแรก (ไม่ต้องใช้ Google Cloud)
 
-### 1. Google Cloud (ครั้งเดียว ~5 นาที)
-1. ไปที่ https://console.cloud.google.com → สร้างโปรเจคใหม่ เช่น `paotang`
-2. **APIs & Services → Library** เปิดใช้ **Google Drive API** และ **Google Sheets API**
-3. **OAuth consent screen** → User type: External → ใส่ชื่อแอป/อีเมล → Scopes: เพิ่ม `.../auth/drive.file` → บันทึก
-4. ⚠️ กด **Publish app** (เปลี่ยนเป็น *In production*) — ถ้าค้างไว้ที่ *Testing* refresh token จะหมดอายุทุก 7 วัน
-   (scope `drive.file` ไม่ต้องรอ Google verify — ตอนล็อกอินจะเห็นคำเตือน "unverified app" ให้กด Advanced → Go to …)
-5. **Credentials → Create credentials → OAuth client ID** → Web application
-   - Authorized redirect URI: `https://<โดเมน-vercel-ของคุณ>/api/google/callback`
-   - จด **Client ID** และ **Client secret**
+### 1. Google Sheet + Apps Script
+1. สร้าง Google Sheet ใหม่ ตั้งชื่อเช่น `เป๋าตังค์`
+2. เมนู **ส่วนขยาย → Apps Script** → ลบโค้ดเดิม แล้ววางโค้ดจากไฟล์ [`apps-script/Code.gs`](apps-script/Code.gs)
+3. แก้บรรทัด `const SECRET = '...'` เป็นข้อความสุ่มยาว ๆ แล้วกดบันทึก 💾
+4. **ทำให้ใช้งานได้ (Deploy) → การทำให้ใช้งานได้รายการใหม่** → ⚙️ เลือก **เว็บแอป**
+   - ดำเนินการในฐานะ: **ฉัน**
+   - ผู้มีสิทธิ์เข้าถึง: **ทุกคน**
+5. กดอนุญาตสิทธิ์ ถ้าขึ้น "Google hasn't verified this app" ให้กด **Advanced → Go to … (unsafe) → Allow** (เป็นสคริปต์ของคุณเอง)
+6. คัดลอก **URL ของเว็บแอป** (ลงท้ายด้วย `/exec`)
+
+แท็บ `รายการ` และโฟลเดอร์ `เป๋าตังค์ - สลิป` ใน Drive จะถูกสร้างให้อัตโนมัติตอนใช้งานครั้งแรก
+
+> แก้โค้ดสคริปต์ภายหลัง: Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy (URL เดิมใช้ต่อได้)
 
 ### 2. Vercel
 1. https://vercel.com/new → Import repo `ms-mook/PaotangMook` → Deploy
@@ -37,16 +41,13 @@
 |---|---|
 | `APP_PIN` | PIN 4–8 หลัก |
 | `AUTH_SECRET` | ข้อความสุ่มยาว ๆ (`openssl rand -hex 32`) |
-| `GOOGLE_CLIENT_ID` | จากข้อ 1.5 |
-| `GOOGLE_CLIENT_SECRET` | จากข้อ 1.5 |
+| `APPS_SCRIPT_URL` | URL เว็บแอปจากข้อ 1.6 |
+| `APPS_SCRIPT_SECRET` | ค่าเดียวกับ `SECRET` ในสคริปต์ |
 
 3. **Deployments → Redeploy**
 
-### 3. เชื่อม Google Drive
-1. เปิด `https://<โดเมน>/setup` (ใส่ PIN) → กด **เชื่อมบัญชี Google**
-2. แอปจะสร้างชีต "เป๋าตังค์ - รายรับรายจ่าย" และโฟลเดอร์ "เป๋าตังค์ - สลิป" ใน Drive ของคุณ แล้วแสดง 3 ค่า:
-   `GOOGLE_REFRESH_TOKEN`, `SHEET_ID`, `DRIVE_FOLDER_ID`
-3. ใส่ทั้ง 3 ค่าใน Vercel → Redeploy อีกครั้ง → เสร็จ 🎉
+### 3. ตรวจการเชื่อมต่อ
+เปิด `https://<โดเมน>/setup` (ใส่ PIN) — ถ้าขึ้น ✅ ครบทุกข้อ พร้อมลิงก์ชีตและโฟลเดอร์สลิป ก็ใช้งานได้เลย 🎉
 
 ### 4. ติดตั้งบนมือถือ
 - **iPhone (Safari)**: ปุ่มแชร์ → *เพิ่มไปยังหน้าจอโฮม*
@@ -60,17 +61,16 @@ cp .env.example .env.local   # ใส่ค่า
 npm install
 npm run dev
 ```
-(ถ้าจะทดสอบ /setup บนเครื่อง ให้เพิ่ม `http://localhost:3000/api/google/callback` ใน redirect URI ด้วย)
 
 ## โครงสร้าง
 ```
 app/page.tsx              หน้าหลัก: สรุปรายเดือน + รายการ
-app/login, app/setup      PIN และหน้าเชื่อม Google
-app/api/transactions      อ่าน/เพิ่ม/ลบรายการ (Sheets) + อัปสลิป (Drive)
+app/login, app/setup      PIN และหน้าตรวจการเชื่อมต่อ
+app/api/transactions      อ่าน/เพิ่ม/ลบรายการ + อัปสลิป (ผ่าน Apps Script)
 app/api/slip/[id]         แสดงรูปสลิปจาก Drive
-app/api/google/*          OAuth ครั้งแรก
+apps-script/Code.gs       โค้ดที่วางใน Apps Script ของชีต (เขียน Sheet + Drive)
 components/               AddSheet (ฟอร์ม + อ่าน QR), DetailSheet
-lib/google.ts             Google Drive/Sheets REST client
+lib/store.ts              ตัวเรียก Apps Script ฝั่ง server
 lib/slipqr.ts             แกะ QR สลิป / พร้อมเพย์
 lib/image.ts              ย่อรูป + สแกน QR ในเบราว์เซอร์ (jsQR)
 proxy.ts                  ตรวจ session ทุก request
@@ -78,5 +78,6 @@ public/sw.js              service worker (offline shell + share target)
 ```
 
 ## หมายเหตุความปลอดภัย
-- แอปใช้ scope `drive.file` → เห็นเฉพาะไฟล์ที่แอปสร้างเอง ไม่เห็นไฟล์อื่นใน Drive
+- URL ของ Apps Script เป็นสาธารณะ แต่ทุกคำสั่งต้องมี `SECRET` ที่ตรงกัน ซึ่งเก็บไว้ฝั่ง server (Vercel) เท่านั้น ไม่เคยส่งไปถึงเบราว์เซอร์
+- สคริปต์ส่งรูปให้เฉพาะไฟล์ที่อยู่ในโฟลเดอร์สลิปเท่านั้น
 - ห้าม commit `.env*` (มีใน `.gitignore` แล้ว) — ค่าลับทั้งหมดอยู่ใน Vercel เท่านั้น

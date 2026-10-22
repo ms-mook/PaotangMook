@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { baht, dayLabel } from "@/lib/format";
-import type { Tx } from "@/lib/google";
+import type { Tx } from "@/lib/types";
 
 export default function DetailSheet({ tx, onClose, onDeleted }: { tx: Tx; onClose: () => void; onDeleted: (id: string) => void }) {
   const [busy, setBusy] = useState(false);

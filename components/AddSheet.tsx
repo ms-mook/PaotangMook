@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/categories";
 import { prepareSlip, type Prepared } from "@/lib/image";
 import { todayISO } from "@/lib/format";
-import type { Tx, TxType } from "@/lib/google";
+import type { Tx, TxType } from "@/lib/types";
 
 interface Props {
   initialFile?: Blob | null;

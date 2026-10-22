@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
-import { deleteTx, trashSlip } from "@/lib/google";
+import { deleteTx, StoreError } from "@/lib/store";
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    const tx = await deleteTx(id);
-    if (!tx) return NextResponse.json({ error: "ไม่พบรายการ" }, { status: 404 });
-    // slip goes to Drive trash (recoverable for 30 days)
-    if (tx.slipFileId) await trashSlip(tx.slipFileId).catch(() => {});
+    await deleteTx(id); // slip goes to Drive trash (recoverable for 30 days)
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    return NextResponse.json({ error: (e as Error).message }, { status: e instanceof StoreError ? e.status : 500 });
   }
 }
