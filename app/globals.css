@@ -529,6 +529,12 @@ small.ok { color: var(--muted); }
 }
 .key:active { transform: scale(.88); background: var(--pink-soft); }
 .key.del { color: var(--muted); }
+.key:disabled { opacity: .45; }
+.keypad.is-locked { filter: grayscale(.6); }
+.lock-box { display: flex; gap: 10px; align-items: center; text-align: left; width: 100%; margin: -4px 0 14px; padding: 10px 12px; border-radius: 16px; background: rgb(255 214 120 / 22%); border: 1px solid #ffd27a; }
+.lock-box > svg { color: var(--warn); flex: none; }
+.lock-box div { display: grid; }
+.lock-box small { color: var(--muted); }
 .key.go { margin-top: 16px; height: auto; font-family: var(--font-body); font-size: 16px; display: flex; background: var(--grad-btn); color: #fff; border-color: transparent; }
 .key.go:disabled { background: var(--pink-soft); color: var(--pink-deep); opacity: .8; }
 

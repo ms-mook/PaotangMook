@@ -13,11 +13,11 @@ function Item({ ok, label }: { ok: boolean; label: string }) {
 export default async function Setup() {
   const e = process.env;
   const hasScript = !!(e.APPS_SCRIPT_URL && e.APPS_SCRIPT_SECRET);
-  let status: { ok: true; sheet: string; folder: string } | { ok: false; error: string } | null = null;
+  let status: { ok: true; sheet: string; folder: string; version?: number } | { ok: false; error: string } | null = null;
   if (hasScript) {
     try {
       const r = await ping();
-      status = { ok: true, sheet: r.sheet, folder: r.folder };
+      status = { ok: true, sheet: r.sheet, folder: r.folder, version: r.version };
     } catch (err) {
       status = { ok: false, error: (err as Error).message };
     }
@@ -28,10 +28,17 @@ export default async function Setup() {
       <h2>สถานะการเชื่อมต่อ</h2>
       <ul style={{ listStyle: "none", padding: 0, lineHeight: 2 }}>
         <Item ok={!!e.APP_PIN && !!e.AUTH_SECRET} label="APP_PIN / AUTH_SECRET" />
+        <Item ok={(e.APP_PIN || "").length >= 6} label="PIN ยาวอย่างน้อย 6 หลัก (แนะนำ)" />
         <Item ok={!!e.APPS_SCRIPT_URL} label="APPS_SCRIPT_URL" />
         <Item ok={!!e.APPS_SCRIPT_SECRET} label="APPS_SCRIPT_SECRET" />
         <Item ok={!!status?.ok} label="เชื่อม Apps Script สำเร็จ" />
       </ul>
+      {(e.APP_PIN || "").length > 0 && (e.APP_PIN || "").length < 6 && (
+        <p className="warn">PIN ตอนนี้สั้นกว่า 6 หลัก แนะนำให้เปลี่ยน APP_PIN ใน Vercel เป็น 6–8 หลักเพื่อความปลอดภัย</p>
+      )}
+      {status?.ok && (status.version ?? 0) < 3 && (
+        <p className="warn">Apps Script ยังเป็นเวอร์ชันเก่า — ระบบล็อก PIN ใช้ตัวสำรองชั่วคราวอยู่ ควรวางโค้ด Code.gs ใหม่แล้ว Deploy เป็น New version</p>
+      )}
       {status?.ok ? (
         <p>
           พร้อมใช้งาน — <a href={status.sheet} target="_blank">เปิดชีต</a> ·{" "}

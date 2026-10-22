@@ -75,3 +75,6 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
 }
 
 export const testEmail = () => call<{ ok: boolean; to: string }>("testEmail");
+
+export const authOp = (op: "status" | "fail" | "ok") =>
+  call<{ locked: boolean; lockUntil: number; remaining: number }>("auth", { op });

@@ -56,7 +56,7 @@ function doPost(e) {
   try {
     switch (req.action) {
       case 'ping':
-        return json_({ ok: true, version: 2, sheet: SpreadsheetApp.getActiveSpreadsheet().getUrl(), folder: folder_().getUrl() });
+        return json_({ ok: true, version: 3, sheet: SpreadsheetApp.getActiveSpreadsheet().getUrl(), folder: folder_().getUrl() });
       case 'bootstrap':
         runRecurring_();
         return json_({ items: list_(), settings: getSettings_() });
@@ -74,6 +74,8 @@ function doPost(e) {
         return json_({ settings: getSettings_() });
       case 'saveSettings':
         return json_({ settings: saveSettings_(req.settings) });
+      case 'auth':
+        return json_(auth_(req.op));
       case 'testEmail':
         weeklySummary();
         return json_({ ok: true, to: Session.getEffectiveUser().getEmail() });
@@ -86,7 +88,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return json_({ ok: true, app: 'เป๋าตังค์', version: 2 });
+  return json_({ ok: true, app: 'เป๋าตังค์', version: 3 });
 }
 
 // ---------- helpers ----------
@@ -255,6 +257,40 @@ function slip_(fileId) {
   if (!ok) return { error: 'not found' };
   const blob = file.getBlob();
   return { mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
+}
+
+// ---------- PIN lockout ----------
+// Wrong PIN 5 times -> locked 15 min; each further lock doubles (max 24 h). A correct PIN resets it.
+const AUTH_MAX_FAILS = 5;
+const AUTH_BASE_LOCK_MS = 15 * 60 * 1000;
+const AUTH_MAX_LOCK_MS = 24 * 60 * 60 * 1000;
+
+function auth_(op) {
+  return withLock_(function () {
+    const props = PropertiesService.getScriptProperties();
+    let st = { fails: 0, level: 0, lockUntil: 0 };
+    try { st = Object.assign(st, JSON.parse(props.getProperty('AUTH') || '{}')); } catch (err) {}
+    const now = Date.now();
+    const locked = st.lockUntil > now;
+    if (op === 'fail' && !locked) {
+      st.fails += 1;
+      if (st.fails >= AUTH_MAX_FAILS) {
+        st.level += 1;
+        st.lockUntil = now + Math.min(AUTH_BASE_LOCK_MS * Math.pow(2, st.level - 1), AUTH_MAX_LOCK_MS);
+        st.fails = 0;
+      }
+      props.setProperty('AUTH', JSON.stringify(st));
+    } else if (op === 'ok') {
+      st = { fails: 0, level: 0, lockUntil: 0 };
+      props.setProperty('AUTH', JSON.stringify(st));
+    }
+    const isLocked = st.lockUntil > now;
+    return {
+      locked: isLocked,
+      lockUntil: isLocked ? st.lockUntil : 0,
+      remaining: isLocked ? 0 : AUTH_MAX_FAILS - st.fails,
+    };
+  });
 }
 
 // ---------- settings ----------
