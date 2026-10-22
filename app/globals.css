@@ -247,3 +247,14 @@ small.ok { color: var(--muted); }
 .save-bar .btn { box-shadow: var(--shadow); }
 .settings .ok, .save-bar .ok { color: var(--income); font-size: 14px; }
 code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+
+/* monthly limit */
+.limit { display: block; width: 100%; text-align: left; border: 0; color: inherit; background: rgb(255 255 255 / 10%); border-radius: 14px; padding: 10px 12px; margin-top: 10px; }
+.limit-top { display: flex; justify-content: space-between; font-size: 13px; opacity: .9; }
+.limit .meter { background: rgb(255 255 255 / 18%); margin: 6px 0 4px; }
+.limit .meter .ok { background: #9fe3c4; }
+.limit .meter .near { background: #f2c25b; }
+.limit .meter .over { background: #ff8a72; }
+.limit small { font-size: 12px; opacity: .85; }
+.alert.over { border-color: var(--expense); background: rgb(180 69 47 / 12%); }
+.budget.total { padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }

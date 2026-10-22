@@ -30,6 +30,15 @@ export function dayLabel(iso: string) {
   return `${d} ${MONTHS[m - 1]} ${String(y + 543).slice(2)}`;
 }
 
+/** Days left in the month including today; null if ym is not the current month. */
+export function daysLeft(ym: string) {
+  const today = todayISO();
+  if (!today.startsWith(ym)) return null;
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return last - Number(today.slice(8, 10)) + 1;
+}
+
 export function shiftMonth(ym: string, delta: number) {
   const [y, m] = ym.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);

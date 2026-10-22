@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { baht, monthLabel, shiftMonth } from "@/lib/format";
+import { baht, daysLeft, monthLabel, shiftMonth } from "@/lib/format";
 import { iconFor, PALETTE } from "@/lib/icons";
 import type { Settings, Tx, TxType } from "@/lib/types";
 
@@ -108,9 +108,28 @@ export default function StatsView({ allItems, month, settings }: { allItems: Tx[
 
   return (
     <>
-      {budgets.length > 0 && (
+      {(budgets.length > 0 || settings.monthlyLimit > 0) && (
         <section className="panel">
           <h3>งบประมาณ · {monthLabel(month)}</h3>
+          {settings.monthlyLimit > 0 && (() => {
+            const used = trend[5].exp, limit = settings.monthlyLimit;
+            const pct = Math.round((used / limit) * 100);
+            const level = pct >= 100 ? "over" : pct >= 80 ? "near" : "ok";
+            const d = daysLeft(month);
+            return (
+              <div className="budget total">
+                <div className="budget-top">
+                  <b>วงเงินรวมทั้งเดือน</b>
+                  <span className={`num ${level}`}>{baht(used)} / {baht(limit)}</span>
+                </div>
+                <div className="meter"><div className={level} style={{ width: `${Math.min(pct, 100)}%` }} /></div>
+                <small className={level}>
+                  {pct >= 100 ? `เกินวงเงิน ${baht(used - limit)} บาท` : `เหลือ ${baht(limit - used)} บาท (${pct}%)`}
+                  {d && used < limit ? ` · วันละ ~${baht(Math.floor((limit - used) / d))} บาท อีก ${d} วัน` : ""}
+                </small>
+              </div>
+            );
+          })()}
           {budgets.map(([c, limit]) => {
             const used = spent[c] || 0;
             const pct = Math.round((used / limit) * 100);

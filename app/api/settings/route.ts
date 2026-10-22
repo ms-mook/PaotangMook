@@ -33,6 +33,7 @@ function sanitize(body: Partial<Settings>): Settings {
     budgets,
     recurring,
     weeklyEmail: !!body.weeklyEmail,
+    monthlyLimit: Math.max(0, Math.round(Number(body.monthlyLimit) || 0)),
   };
 }
 

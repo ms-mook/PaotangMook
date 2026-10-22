@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS = {
   budgets: {},
   recurring: [],
   weeklyEmail: false,
+  monthlyLimit: 0,
 };
 
 // กด Run ฟังก์ชันนี้หนึ่งครั้งในหน้า Apps Script เพื่ออนุญาตสิทธิ์ทั้งหมด
@@ -263,17 +264,15 @@ function getSettings_() {
   let s = {};
   try { s = raw ? JSON.parse(raw) : {}; } catch (err) {}
   const out = {};
-  Object.keys(DEFAULT_SETTINGS).forEach(function (k) {
-    out[k] = s[k] !== undefined ? s[k] : DEFAULT_SETTINGS[k];
-  });
+  Object.keys(DEFAULT_SETTINGS).forEach(function (k) { out[k] = DEFAULT_SETTINGS[k]; });
+  Object.keys(s).forEach(function (k) { out[k] = s[k]; });
   return out;
 }
 
 function saveSettings_(s) {
+  // the app validates settings before sending; keep every key so new settings work without a script update
   const clean = getSettings_();
-  Object.keys(DEFAULT_SETTINGS).forEach(function (k) {
-    if (s && s[k] !== undefined) clean[k] = s[k];
-  });
+  Object.keys(s || {}).forEach(function (k) { clean[k] = s[k]; });
   const raw = JSON.stringify(clean);
   if (raw.length > 8500) throw new Error('ตั้งค่ามากเกินไป ลองลดจำนวนหมวดหรือรายการประจำ');
   PropertiesService.getScriptProperties().setProperty('SETTINGS', raw);
@@ -389,6 +388,12 @@ function weeklySummary() {
     (catRows ? '<h3>รายจ่ายตามหมวด (7 วัน)</h3><table width="100%">' + catRows + '</table>' : '<p>สัปดาห์นี้ไม่มีรายจ่าย</p>') +
     '<h3>เดือนนี้</h3><p>รับ ' + fmt_(sum(month, 'income')) + ' · จ่าย ' + fmt_(sum(month, 'expense')) +
     ' · คงเหลือ ' + fmt_(sum(month, 'income') - sum(month, 'expense')) + ' บาท</p>' +
+    (s.monthlyLimit > 0 ? (function () {
+      const used = sum(month, 'expense');
+      const pct = Math.round((used / s.monthlyLimit) * 100);
+      const color = pct >= 100 ? '#b4452f' : pct >= 80 ? '#c98a12' : '#0f7a52';
+      return '<p>วงเงินเดือนนี้: <b style="color:' + color + '">' + fmt_(used) + ' / ' + fmt_(s.monthlyLimit) + ' บาท (' + pct + '%)</b></p>';
+    })() : '') +
     (budgetRows ? '<h3>งบประมาณเดือนนี้</h3><table width="100%">' + budgetRows + '</table>' : '') +
     '</div>';
 

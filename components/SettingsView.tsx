@@ -102,10 +102,29 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
     setRec(blankRec(s));
   }
 
+  const budgetSum = Object.values(s.budgets).reduce((a, b) => a + b, 0);
   const recCats = rec.type === "income" ? s.incomeCategories : s.expenseCategories;
 
   return (
     <div className="settings">
+      <section className="panel">
+        <h3>วงเงินใช้จ่ายต่อเดือน</h3>
+        <p className="hint">รายจ่ายรวมทุกหมวดต่อเดือน — แสดงบนหน้าหลักและเตือนเมื่อใช้ถึง 80% (เว้นว่าง = ไม่จำกัด)</p>
+        <div className="amount-input">
+          <input
+            className="num"
+            inputMode="numeric"
+            placeholder="ไม่จำกัด"
+            value={s.monthlyLimit || ""}
+            onChange={(e) => set("monthlyLimit", Number(e.target.value.replace(/\D/g, "")) || 0)}
+          />
+          <span>บาท / เดือน</span>
+        </div>
+        {s.monthlyLimit > 0 && budgetSum > s.monthlyLimit && (
+          <small className="near">งบรายหมวดรวมกัน {baht(budgetSum)} บาท มากกว่าวงเงินรวม</small>
+        )}
+      </section>
+
       <section className="panel">
         <h3>หมวดรายจ่าย</h3>
         <TagEditor items={s.expenseCategories} onChange={(v) => set("expenseCategories", v)} placeholder="เพิ่มหมวด เช่น ☕ กาแฟ" />
@@ -215,13 +234,15 @@ export default function SettingsView({ settings, scanEnabled, onSaved }: Props) 
         <a href="/setup">ตรวจสถานะการเชื่อมต่อ</a>
       </section>
 
-      <div className="save-bar">
-        {err && <div className="err">{err}</div>}
-        {msg && !dirty && <div className="ok">{msg}</div>}
-        <button className="btn" disabled={busy || !dirty} onClick={() => save()}>
-          {busy ? "กำลังบันทึก…" : dirty ? "บันทึกการตั้งค่า" : "บันทึกแล้ว"}
-        </button>
-      </div>
+      {msg && !dirty && <p className="ok">{msg}</p>}
+      {(dirty || err) && (
+        <div className="save-bar">
+          {err && <div className="err">{err}</div>}
+          <button className="btn" disabled={busy || !dirty} onClick={() => save()}>
+            {busy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

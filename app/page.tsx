@@ -5,7 +5,7 @@ import ListView from "@/components/ListView";
 import SettingsView from "@/components/SettingsView";
 import StatsView from "@/components/StatsView";
 import TxForm from "@/components/TxForm";
-import { baht, monthLabel, shiftMonth, todayISO } from "@/lib/format";
+import { baht, daysLeft, monthLabel, shiftMonth, todayISO } from "@/lib/format";
 import { DEFAULT_SETTINGS, type Settings, type Tx } from "@/lib/types";
 
 type Tab = "list" | "stats" | "settings";
@@ -87,6 +87,20 @@ export default function Home() {
       .map(([c, limit]) => ({ c, pct: Math.round(((spent[c] || 0) / limit) * 100) }));
   }, [monthItems, settings.budgets]);
 
+  const limit = useMemo(() => {
+    const cap = settings.monthlyLimit;
+    if (!(cap > 0)) return null;
+    const left = cap - totals.exp;
+    const pct = Math.round((totals.exp / cap) * 100);
+    const d = daysLeft(month);
+    return {
+      left,
+      pct,
+      level: pct >= 100 ? "over" : pct >= 80 ? "near" : "ok",
+      perDay: d && left > 0 ? Math.floor(left / d) : null,
+    };
+  }, [settings.monthlyLimit, totals.exp, month]);
+
   function nextInQueue() {
     setSheet((s) => (s?.kind === "add" && s.index + 1 < s.queue.length ? { ...s, index: s.index + 1 } : null));
   }
@@ -122,6 +136,20 @@ export default function Home() {
             <div><small>รายรับ</small><b className="num">{baht(totals.inc)}</b></div>
             <div><small>รายจ่าย</small><b className="num">{baht(totals.exp)}</b></div>
           </div>
+          {limit && (
+            <button className="limit" onClick={() => setTab("stats")}>
+              <div className="limit-top">
+                <span>วงเงินเดือนนี้</span>
+                <span className="num">{baht(totals.exp)} / {baht(settings.monthlyLimit)}</span>
+              </div>
+              <div className="meter"><div className={limit.level} style={{ width: `${Math.min(limit.pct, 100)}%` }} /></div>
+              <small>
+                {limit.left < 0
+                  ? `เกินวงเงิน ${baht(-limit.left)} บาท`
+                  : `เหลือ ${baht(limit.left)} บาท` + (limit.perDay !== null ? ` · ใช้ได้อีกวันละ ~${baht(limit.perDay)} บาท` : "")}
+              </small>
+            </button>
+          )}
         </section>
       )}
 
@@ -138,6 +166,11 @@ export default function Home() {
         </div>
       )}
 
+      {tab === "list" && limit && limit.pct >= 80 && (
+        <button className={`alert ${limit.level}`} onClick={() => setTab("stats")}>
+          {limit.pct >= 100 ? "🚨 ใช้เกินวงเงินเดือนนี้แล้ว" : `⚠️ ใช้ไป ${limit.pct}% ของวงเงินเดือนนี้`}
+        </button>
+      )}
       {tab === "list" && budgetAlerts.length > 0 && (
         <button className="alert" onClick={() => setTab("stats")}>
           ⚠️ {budgetAlerts.map((a) => `${a.c} ${a.pct}%`).join(" · ")} ของงบเดือนนี้

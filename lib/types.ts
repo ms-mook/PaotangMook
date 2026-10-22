@@ -31,6 +31,7 @@ export interface Settings {
   budgets: Record<string, number>;
   recurring: Recurring[];
   weeklyEmail: boolean;
+  monthlyLimit: number; // 0 = off
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   budgets: {},
   recurring: [],
   weeklyEmail: false,
+  monthlyLimit: 0,
 };
 
 /** What the AI slip reader returns (all optional). */
