@@ -1,0 +1,23 @@
+{
+  "name": "paotang",
+  "version": "1.0.0",
+  "description": "เป๋าตังค์ — บันทึกรายรับรายจ่าย + เก็บสลิป",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}
