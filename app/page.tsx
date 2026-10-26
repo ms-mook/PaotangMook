@@ -8,6 +8,7 @@ import ListView from "@/components/ListView";
 import SettingsView from "@/components/SettingsView";
 import StatsView from "@/components/StatsView";
 import TxForm from "@/components/TxForm";
+import { ACTIVE_KEY, IDLE_MS } from "@/lib/idle";
 import { baht, daysLeft, fullDate, greeting, monthLabel, shiftMonth, todayISO } from "@/lib/format";
 import { DEFAULT_SETTINGS, type Settings, type Tx } from "@/lib/types";
 
@@ -80,7 +81,60 @@ export default function Home() {
     }
   }, []);
 
+  // auto-lock: no touch/keys for IDLE_MS (or the app sat in the background that long) -> back to the PIN screen
   useEffect(() => {
+    let last = Date.now();
+    try {
+      const stored = Number(localStorage.getItem(ACTIVE_KEY));
+      if (stored) last = stored;
+    } catch { /* ignore */ }
+    let locking = false;
+    const lock = async () => {
+      if (locking) return;
+      locking = true;
+      try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+      await fetch("/api/login", { method: "DELETE" }).catch(() => {});
+      location.replace("/login?idle=1");
+    };
+    const idle = () => Date.now() - last > IDLE_MS;
+    if (idle()) {
+      lock();
+      return;
+    }
+    let saved = 0;
+    let pinged = Date.now();
+    const touch = () => {
+      last = Date.now();
+      if (last - saved > 3000) {
+        saved = last;
+        try { localStorage.setItem(ACTIVE_KEY, String(last)); } catch { /* ignore */ }
+      }
+      // keep the server-side session alive while the person is busy in the UI (no other requests needed)
+      if (last - pinged > 60_000) {
+        pinged = last;
+        fetch("/api/ping", { cache: "no-store" }).then((r) => { if (r.status === 401) lock(); }).catch(() => {});
+      }
+    };
+    touch();
+    const events = ["pointerdown", "keydown", "touchstart", "scroll", "input"] as const;
+    events.forEach((e) => addEventListener(e, touch, { capture: true, passive: true }));
+    const tick = setInterval(() => idle() && lock(), 10_000);
+    const onShow = () => {
+      if (document.visibilityState === "visible" && idle()) lock();
+    };
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      events.forEach((e) => removeEventListener(e, touch, { capture: true }));
+      clearInterval(tick);
+      document.removeEventListener("visibilitychange", onShow);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const st = Number(localStorage.getItem(ACTIVE_KEY));
+      if (st && Date.now() - st > IDLE_MS) return; // the lock effect above is sending us to the PIN screen
+    } catch { /* ignore */ }
     setHello(greeting());
     const cached = readCache();
     if (cached) {
@@ -158,7 +212,7 @@ export default function Home() {
 
   async function logout() {
     await fetch("/api/login", { method: "DELETE" });
-    try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
     location.replace("/login");
   }
 

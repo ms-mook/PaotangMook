@@ -1,6 +1,7 @@
 "use client";
 import { Delete, LockKeyhole } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ACTIVE_KEY } from "@/lib/idle";
 import { BgDeco, Piggy } from "@/components/Cute";
 
 function fmtLeft(ms: number) {
@@ -14,6 +15,8 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
 
 export default function Login() {
   const [pin, setPin] = useState("");
+  const [autoLocked, setAutoLocked] = useState(false);
+  useEffect(() => setAutoLocked(new URLSearchParams(location.search).has("idle")), []);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(0);
@@ -53,6 +56,7 @@ export default function Login() {
       body: JSON.stringify({ pin: value }),
     });
     if (res.ok) {
+      try { localStorage.setItem(ACTIVE_KEY, String(Date.now())); } catch { /* ignore */ }
       location.replace("/");
       return;
     }
@@ -94,7 +98,7 @@ export default function Login() {
         <div className="login-card glass-strong pop-in">
           <Piggy size={104} mood={locked ? "sleepy" : err ? "wow" : pin.length ? "happy" : "wink"} className="bob" />
           <h1>เป๋าตังค์</h1>
-          <p>ใส่ PIN เพื่อเข้าใช้งานค่ะ</p>
+          <p>{autoLocked ? "🔒 ล็อกให้อัตโนมัติ เพราะไม่ได้ใช้งานเกิน 5 นาที — ใส่ PIN อีกครั้งนะคะ" : "ใส่ PIN เพื่อเข้าใช้งานค่ะ"}</p>
           <div className={`pin-dots ${shake ? "shake" : ""}`} key={shake} aria-live="polite" aria-label={`ใส่แล้ว ${pin.length} หลัก`}>
             {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (
               <i key={i} className={i < pin.length ? "on" : ""} />

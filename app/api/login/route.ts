@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSession, SESSION_COOKIE, SESSION_DAYS } from "@/lib/auth";
+import { createSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
 import { lockout, samePin, type AuthState } from "@/lib/lockout";
 
 export const dynamic = "force-dynamic";
@@ -39,13 +39,7 @@ export async function POST(req: Request) {
   await lockout("ok");
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, await createSession(), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_DAYS * 86400,
-  });
+  res.cookies.set(SESSION_COOKIE, await createSession(), sessionCookieOptions());
   return res;
 }
 
