@@ -40,6 +40,7 @@ function authorize() {
   folder_();
   ScriptApp.getProjectTriggers();
   MailApp.getRemainingDailyQuota();
+  Session.getEffectiveUser().getEmail();
   Logger.log('OK — อนุญาตสิทธิ์เรียบร้อย');
 }
 
