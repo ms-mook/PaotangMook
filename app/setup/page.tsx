@@ -36,6 +36,9 @@ export default async function Setup() {
       {(e.APP_PIN || "").length > 0 && (e.APP_PIN || "").length < 6 && (
         <p className="warn">PIN ตอนนี้สั้นกว่า 6 หลัก แนะนำให้เปลี่ยน APP_PIN ใน Vercel เป็น 6–8 หลักเพื่อความปลอดภัย</p>
       )}
+      {status?.ok && (status.version ?? 0) >= 3 && (status.version ?? 0) < 4 && (
+        <p className="warn">Apps Script เป็นเวอร์ชัน 3 — อีเมลรายสัปดาห์ยังไม่แนบ PDF ให้วาง Code.gs ใหม่ แล้วรัน authorize และ Deploy เป็น New version</p>
+      )}
       {status?.ok && (status.version ?? 0) < 3 && (
         <p className="warn">Apps Script ยังเป็นเวอร์ชันเก่า — ระบบล็อก PIN ใช้ตัวสำรองชั่วคราวอยู่ ควรวางโค้ด Code.gs ใหม่แล้ว Deploy เป็น New version</p>
       )}

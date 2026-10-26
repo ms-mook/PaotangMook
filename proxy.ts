@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 
 export async function proxy(req: NextRequest) {
+  // weekly e-mail job (Apps Script) fetches the PDF with a shared secret; the route verifies it
+  if (req.nextUrl.pathname === "/api/report" && req.headers.get("x-report-secret")) return NextResponse.next();
   const ok = await verifySession(req.cookies.get(SESSION_COOKIE)?.value);
   if (ok) return NextResponse.next();
 

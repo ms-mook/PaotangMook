@@ -70,11 +70,12 @@ export async function getSlip(id: string): Promise<{ mime: string; bytes: Buffer
   return { mime: res.mime, bytes: Buffer.from(res.data, "base64") };
 }
 
-export async function saveSettings(settings: Settings): Promise<Settings> {
-  return normSettings((await call<{ settings: Settings }>("saveSettings", { settings })).settings);
+export async function saveSettings(settings: Settings, appUrl?: string): Promise<Settings> {
+  return normSettings((await call<{ settings: Settings }>("saveSettings", { settings, appUrl })).settings);
 }
 
-export const testEmail = () => call<{ ok: boolean; to: string }>("testEmail");
+export const testEmail = (appUrl?: string) =>
+  call<{ ok: boolean; to: string; pdf?: boolean }>("testEmail", { appUrl });
 
 export const authOp = (op: "status" | "fail" | "ok") =>
   call<{ locked: boolean; lockUntil: number; remaining: number }>("auth", { op });

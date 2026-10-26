@@ -41,6 +41,7 @@ function authorize() {
   ScriptApp.getProjectTriggers();
   MailApp.getRemainingDailyQuota();
   Session.getEffectiveUser().getEmail();
+  UrlFetchApp.fetch('https://www.google.com/generate_204', { muteHttpExceptions: true });
   Logger.log('OK — อนุญาตสิทธิ์เรียบร้อย');
 }
 
@@ -74,12 +75,13 @@ function doPost(e) {
       case 'getSettings':
         return json_({ settings: getSettings_() });
       case 'saveSettings':
+        rememberAppUrl_(req.appUrl);
         return json_({ settings: saveSettings_(req.settings) });
       case 'auth':
         return json_(auth_(req.op));
       case 'testEmail':
-        weeklySummary();
-        return json_({ ok: true, to: Session.getEffectiveUser().getEmail() });
+        rememberAppUrl_(req.appUrl);
+        return json_({ ok: true, to: Session.getEffectiveUser().getEmail(), pdf: weeklySummary() });
       default:
         return json_({ error: 'unknown action' });
     }
@@ -89,7 +91,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return json_({ ok: true, app: 'เป๋าตังค์', version: 3 });
+  return json_({ ok: true, app: 'เป๋าตังค์', version: 4 });
 }
 
 // ---------- helpers ----------
@@ -434,9 +436,40 @@ function weeklySummary() {
     (budgetRows ? '<h3>งบประมาณเดือนนี้</h3><table width="100%">' + budgetRows + '</table>' : '') +
     '</div>';
 
-  MailApp.sendEmail({
+  const pdf = fetchReportPdf_(from, to);
+  const note = pdf
+    ? '<p style="color:#9a7d94;font-size:13px">📎 แนบ PDF สรุปรายการทั้งหมดมาด้วย — รหัสผ่านเปิดไฟล์คือ PIN เดียวกับที่ใช้เข้าแอป</p>'
+    : '<p style="color:#9a7d94;font-size:13px">ดู/ดาวน์โหลด PDF ได้ที่แอป → ตั้งค่า → สรุป PDF</p>';
+  const mail = {
     to: Session.getEffectiveUser().getEmail(),
     subject: 'เป๋าตังค์ · สรุปสัปดาห์ ' + from + ' – ' + to,
-    htmlBody: html,
-  });
+    htmlBody: html.replace(/<\/div>$/, note + '</div>'),
+  };
+  if (pdf) mail.attachments = [pdf];
+  MailApp.sendEmail(mail);
+  return !!pdf;
+}
+
+// the app's public address is remembered whenever settings are saved from the app
+function rememberAppUrl_(url) {
+  if (typeof url === 'string' && /^https?:\/\/[A-Za-z0-9.:-]+$/.test(url)) {
+    PropertiesService.getScriptProperties().setProperty('APP_URL', url);
+  }
+}
+
+// asks the Vercel app for the (password-protected) PDF; returns a blob or null — the email still goes out without it
+function fetchReportPdf_(from, to) {
+  const base = PropertiesService.getScriptProperties().getProperty('APP_URL');
+  if (!base) return null;
+  try {
+    const res = UrlFetchApp.fetch(base + '/api/report?from=' + from + '&to=' + to, {
+      headers: { 'x-report-secret': SECRET },
+      muteHttpExceptions: true,
+    });
+    const type = String(res.getHeaders()['Content-Type'] || res.getHeaders()['content-type'] || '');
+    if (res.getResponseCode() !== 200 || type.indexOf('application/pdf') < 0) return null;
+    return res.getBlob().setName('paotang-' + from + '_' + to + '.pdf');
+  } catch (err) {
+    return null;
+  }
 }

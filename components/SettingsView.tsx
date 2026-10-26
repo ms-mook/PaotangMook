@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { baht } from "@/lib/format";
+import { baht, todayISO } from "@/lib/format";
 import { iconFor } from "@/lib/icons";
 import type { Recurring, Settings, TxType } from "@/lib/types";
 
@@ -81,6 +81,54 @@ export default function SettingsView({ settings, scanEnabled, onSaved, onLogout 
     }
   }
 
+  const [pFrom, setPFrom] = useState(() => todayISO().slice(0, 8) + "01");
+  const [pTo, setPTo] = useState(() => todayISO());
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  function preset(kind: "7d" | "month" | "last") {
+    const now = new Date();
+    const iso = (d: Date) => todayISO(d);
+    if (kind === "7d") {
+      const a = new Date(now);
+      a.setDate(a.getDate() - 6);
+      setPFrom(iso(a));
+      setPTo(iso(now));
+    } else if (kind === "month") {
+      setPFrom(iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+      setPTo(iso(now));
+    } else {
+      setPFrom(iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+      setPTo(iso(new Date(now.getFullYear(), now.getMonth(), 0)));
+    }
+  }
+
+  async function downloadPdf() {
+    if (!pFrom || !pTo || pFrom > pTo) {
+      setErr("เลือกช่วงวันที่ให้ถูกต้องก่อนนะ (วันเริ่มต้องไม่เกินวันสิ้นสุด)");
+      return;
+    }
+    setPdfBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const res = await fetch(`/api/report?from=${pFrom}&to=${pTo}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "สร้าง PDF ไม่สำเร็จ");
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `paotang-${pFrom}_${pTo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setMsg("สร้าง PDF แล้ว — รหัสผ่านเปิดไฟล์คือ PIN ของแอป");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   async function testEmail() {
     setBusy(true);
     setErr("");
@@ -89,7 +137,7 @@ export default function SettingsView({ settings, scanEnabled, onSaved, onLogout 
       const res = await fetch("/api/settings", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg(`ส่งอีเมลทดสอบไปที่ ${data.to} แล้ว`);
+      setMsg(data.pdf ? `ส่งสรุปพร้อม PDF ไปที่ ${data.to} แล้ว` : `ส่งสรุปไปที่ ${data.to} แล้ว (ยังไม่ได้แนบ PDF — บันทึกการตั้งค่าอีกครั้ง แล้วลองใหม่)`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -212,12 +260,27 @@ export default function SettingsView({ settings, scanEnabled, onSaved, onLogout 
       </section>
 
       <section className="panel glass">
+        <h3>📄 สรุป PDF</h3>
+        <p className="hint">ไฟล์ PDF สีหวาน ๆ รวมรายการทั้งหมดในช่วงที่เลือก — เปิดไฟล์ด้วย PIN เดียวกับที่ใช้เข้าแอป</p>
+        <div className="chips">
+          <button className="chip" onClick={() => preset("7d")}>7 วันล่าสุด</button>
+          <button className="chip" onClick={() => preset("month")}>เดือนนี้</button>
+          <button className="chip" onClick={() => preset("last")}>เดือนที่แล้ว</button>
+        </div>
+        <div className="date-row" style={{ marginTop: 10 }}>
+          <input className="in" type="date" aria-label="ตั้งแต่วันที่" value={pFrom} max={pTo || undefined} onChange={(e) => setPFrom(e.target.value)} />
+          <input className="in" type="date" aria-label="ถึงวันที่" value={pTo} min={pFrom || undefined} onChange={(e) => setPTo(e.target.value)} />
+        </div>
+        <button className="btn" style={{ marginTop: 12 }} disabled={pdfBusy} onClick={downloadPdf}>{pdfBusy ? "กำลังสร้าง PDF…" : "ดาวน์โหลด PDF"}</button>
+      </section>
+
+      <section className="panel glass">
         <h3>💌 สรุปทางอีเมล</h3>
         <label className="switch">
           <input type="checkbox" checked={s.weeklyEmail} onChange={(e) => set("weeklyEmail", e.target.checked)} />
-          <span>ส่งสรุปรายสัปดาห์ทุกวันอาทิตย์ 19:00 ไปที่อีเมลเจ้าของชีต</span>
+          <span>ส่งสรุปรายสัปดาห์ทุกวันอาทิตย์ 19:00 ไปที่อีเมลเจ้าของชีต พร้อมแนบ PDF</span>
         </label>
-        <button className="btn ghost" disabled={busy} onClick={testEmail}>ส่งอีเมลทดสอบตอนนี้</button>
+        <button className="btn ghost" disabled={busy} onClick={testEmail}>ส่งสรุปให้ดูตอนนี้</button>
       </section>
 
       <section className="panel glass">
