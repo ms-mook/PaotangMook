@@ -40,9 +40,8 @@ export async function POST(req: Request) {
     const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
     const data = Buffer.from(await file.arrayBuffer()).toString("base64");
 
-    const res = await fetch(
-      `${process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
+    const url = `${process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const init: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
@@ -63,11 +62,20 @@ export async function POST(req: Request) {
           ],
           generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
         }),
-      },
-    );
-    const body = await res.json();
+    };
+    // Google answers 503/429 when a model is busy; those clear up in seconds, so retry before giving up
+    let res = await fetch(url, init);
+    for (let i = 0; i < 2 && (res.status === 503 || res.status === 429 || res.status === 500); i++) {
+      await new Promise((r) => setTimeout(r, 1200 * (i + 1)));
+      res = await fetch(url, init);
+    }
+    const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return NextResponse.json({ error: `Gemini: ${body?.error?.message || res.status}` }, { status: 502 });
+      const busy = res.status === 503 || res.status === 429;
+      return NextResponse.json(
+        { error: busy ? "Gemini กำลังมีคนใช้งานเยอะ ลองกดแนบสลิปอีกครั้งในอีกสักครู่ (กรอกยอดเองหรือใช้ยอดจาก QR ได้เลย)" : `Gemini: ${body?.error?.message || res.status}` },
+        { status: 502 },
+      );
     }
     const text: string = body?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") || "{}";
     const r = JSON.parse(text) as ScanResult;
