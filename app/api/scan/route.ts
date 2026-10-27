@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { ScanResult } from "@/lib/types";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const SCHEMA = {
   type: "OBJECT",
@@ -37,10 +37,11 @@ export async function POST(req: Request) {
     const file = form.get("image");
     if (!(file instanceof File)) return NextResponse.json({ error: "no image" }, { status: 400 });
     const categories = String(form.get("categories") || "");
-    const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+    // try the chosen model first, then other stable Flash models: when one is overloaded another usually isn't
+    const models = [...new Set([process.env.GEMINI_MODEL || "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.1-flash-lite"])];
     const data = Buffer.from(await file.arrayBuffer()).toString("base64");
 
-    const url = `${process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const urlFor = (m: string) => `${process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${encodeURIComponent(m)}:generateContent`;
     const init: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -63,17 +64,27 @@ export async function POST(req: Request) {
           generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
         }),
     };
-    // Google answers 503/429 when a model is busy; those clear up in seconds, so retry before giving up
-    let res = await fetch(url, init);
-    for (let i = 0; i < 2 && (res.status === 503 || res.status === 429 || res.status === 500); i++) {
-      await new Promise((r) => setTimeout(r, 1200 * (i + 1)));
-      res = await fetch(url, init);
+    // busy (503/429), server hiccup (500) or unknown/blocked model (404/403) -> move on to the next model
+    const retryable = (c: number) => [429, 500, 503, 404, 403].includes(c);
+    let res: Response | undefined;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const m of models) {
+        try {
+          res = await fetch(urlFor(m), { ...init, signal: AbortSignal.timeout(15000) });
+        } catch {
+          res = undefined;
+          continue;
+        }
+        if (res.ok || !retryable(res.status)) break;
+      }
+      if (res && (res.ok || !retryable(res.status))) break;
+      if (pass === 0) await new Promise((r) => setTimeout(r, 1500));
     }
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const busy = res.status === 503 || res.status === 429;
+    const body = res ? await res.json().catch(() => ({})) : {};
+    if (!res || !res.ok) {
+      const busy = !res || res.status === 503 || res.status === 429;
       return NextResponse.json(
-        { error: busy ? "Gemini กำลังมีคนใช้งานเยอะ ลองกดแนบสลิปอีกครั้งในอีกสักครู่ (กรอกยอดเองหรือใช้ยอดจาก QR ได้เลย)" : `Gemini: ${body?.error?.message || res.status}` },
+        { error: busy ? "Gemini กำลังมีคนใช้งานเยอะ ลองกดแนบสลิปอีกครั้งในอีกสักครู่ (กรอกยอดเองหรือใช้ยอดจาก QR ได้เลย)" : `Gemini: ${body?.error?.message || res?.status}` },
         { status: 502 },
       );
     }
